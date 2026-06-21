@@ -10,7 +10,7 @@ import okhttp3.Request
 import java.io.IOException
 
 object TMDB {
-    private const val API_KEY = "4ecab3ee8d35bfdfe11585929ee55d44"
+    private const val API_KEY = "7b5fcf48f24a334bb09f87ce20e5f2ce"
     private const val BASE_URL = "https://api.themoviedb.org/3"
     const val IMAGE_BASE = "https://image.tmdb.org/t/p/w500"
     const val IMAGE_BASE_ORIGINAL = "https://image.tmdb.org/t/p/original"
