@@ -98,7 +98,7 @@ class GuardaSerieSource : Source {
         }
 
         // Test: return dummy data to see if UI works
-        MediaDetails(
+        return MediaDetails(
             id = url, title = slugTitle.ifBlank { "Test Show" },
             description = "TMDB search failed for: $slugTitle",
             posterUrl = null, backdropUrl = null,
