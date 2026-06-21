@@ -9,7 +9,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
-import okhttp3.OkHttpClient
+import android.util.Log
 import okhttp3.Request
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
@@ -217,35 +217,40 @@ class GuardaSerieSource : Source {
 
     override suspend fun getStreamLinks(url: String): List<StreamLink> {
         val parts = url.split(":")
-        if (parts.size < 4) return emptyList()
+        if (parts.size < 4) { Log.e("GuardaSerie", "Bad URL: $url"); return emptyList() }
         val tmdbId = parts[1]
         val season = parts[2]
         val episode = parts[3]
-        return extractVixStreams("https://vixsrc.to/api/tv/$tmdbId/$season/$episode")
+        Log.d("GuardaSerie", "Extracting: tmdb=$tmdbId s=$season e=$episode")
+        val result = extractVixStreams("https://vixsrc.to/api/tv/$tmdbId/$season/$episode")
+        Log.d("GuardaSerie", "Streams found: ${result.size}")
+        return result
     }
 
     private suspend fun extractVixStreams(apiUrl: String): List<StreamLink> = withContext(Dispatchers.IO) {
         try {
             val ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:131.0) Gecko/20100101 Firefox/131.0"
-            // Get embed URL from API
             val apiReq = Request.Builder().url(apiUrl).header("User-Agent", ua).build()
-            val apiBody = client.newCall(apiReq).execute().body?.string() ?: return@withContext emptyList()
+            val apiResp = client.newCall(apiReq).execute()
+            val apiBody = apiResp.body?.string() ?: run { Log.e("GuardaSerie", "API empty body"); return@withContext emptyList() }
+            Log.d("GuardaSerie", "API response: ${apiBody.take(100)}")
             val apiData = json.decodeFromString<JsonObject>(apiBody)
-            val embedPath = apiData["src"]?.toString()?.removeSurrounding("\"") ?: return@withContext emptyList()
+            val embedPath = apiData["src"]?.toString()?.removeSurrounding("\"") ?: run { Log.e("GuardaSerie", "No src in API"); return@withContext emptyList() }
             
-            // Fetch embed page
             val embedUrl = if (embedPath.startsWith("http")) embedPath else "https://vixsrc.to$embedPath"
-            val embedReq = Request.Builder().url(embedUrl).header("User-Agent", ua)
-                .header("Referer", "https://vixsrc.to").build()
-            val embedHtml = client.newCall(embedReq).execute().body?.string() ?: return@withContext emptyList()
+            Log.d("GuardaSerie", "Fetching embed: $embedUrl")
+            val embedResp = client.newCall(Request.Builder().url(embedUrl).header("User-Agent", ua)
+                .header("Referer", "https://vixsrc.to").build()).execute()
+            val embedHtml = embedResp.body?.string() ?: run { Log.e("GuardaSerie", "Embed empty body"); return@withContext emptyList() }
             
-            // Extract masterPlaylist
-            val mp = extractMasterPlaylist(embedHtml) ?: return@withContext emptyList()
+            val mp = extractMasterPlaylist(embedHtml)
+            if (mp == null) { Log.e("GuardaSerie", "No masterPlaylist in embed"); return@withContext emptyList() }
+            Log.d("GuardaSerie", "MasterPlaylist: url=${mp.url} token=${mp.params.token}")
             val u = mp.url + "?token=" + mp.params.token + "&expires=" + mp.params.expires
             listOf(StreamLink(url = if (mp.canPlayFHD) "$u&h=1" else u,
                 quality = if (mp.canPlayFHD) "1080p" else "720p",
                 headers = mapOf("Referer" to "https://vixsrc.to", "Origin" to "https://vixsrc.to", "User-Agent" to ua)))
-        } catch (_: Exception) { emptyList() }
+        } catch (e: Exception) { Log.e("GuardaSerie", "Extraction error", e); emptyList() }
     }
 
     private fun extractMasterPlaylist(html: String): VixPlaylist? {
