@@ -146,25 +146,55 @@ class OnlineSerieTVSource(private val appContext: Context? = null) : Source {
     }
 
     override suspend fun getStreamLinks(url: String): List<StreamLink> {
-        val links = url.split(",").filter { it.isNotBlank() }.filter { it.contains("uprot") }
+        val links = url.split(",").filter { it.isNotBlank() }
         if (links.isEmpty()) return emptyList()
+
+        val ua = mapOf(
+            "Referer" to baseUrl,
+            "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:131.0) Gecko/20100101 Firefox/131.0"
+        )
 
         for (link in links) {
             try {
-                val streamUrl = extractFromUprot(link)
+                val streamUrl = when {
+                    link.contains("uprot") -> extractFromUprot(link)
+                    link.contains("maxstream") -> extractMaxStream(link)
+                    link.contains("flexy") -> extractFlexy(link)
+                    link.contains("vixcloud") -> extractVixCloud(link)
+                    else -> extractGeneric(link)
+                }
                 if (streamUrl != null) {
-                    return listOf(StreamLink(
-                        url = streamUrl,
-                        quality = "720p",
-                        headers = mapOf(
-                            "Referer" to "https://uprot.net/",
-                            "User-Agent" to "Mozilla/5.0"
-                        )
-                    ))
+                    return listOf(StreamLink(url = streamUrl, quality = "720p", headers = ua))
                 }
             } catch (_: Exception) {}
         }
         return emptyList()
+    }
+
+    private suspend fun extractGeneric(url: String): String? = withContext(Dispatchers.IO) {
+        val req = Request.Builder().url(url)
+            .header("User-Agent", "Mozilla/5.0").build()
+        val resp = client.newCall(req).execute()
+        val body = resp.body?.string() ?: return@withContext null
+        val finalUrl = resp.request.url.toString()
+
+        Regex("""(https?://[^"'\s]+\.m3u8[^"'\s]*)""").find(body)?.value
+            ?: if (finalUrl.contains("maxstream")) extractMaxStream(finalUrl) else null
+    }
+
+    private suspend fun extractFlexy(url: String): String? = withContext(Dispatchers.IO) {
+        val req = Request.Builder().url(url)
+            .header("User-Agent", "Mozilla/5.0").header("Referer", "https://flexy.stream/").build()
+        val resp = client.newCall(req).execute()
+        Regex("""(https?://[^"'\s]+\.m3u8[^"'\s]*)""").find(resp.body?.string() ?: "")?.value
+    }
+
+    private suspend fun extractVixCloud(url: String): String? = withContext(Dispatchers.IO) {
+        val req = Request.Builder().url(url)
+            .header("User-Agent", "Mozilla/5.0").build()
+        val resp = client.newCall(req).execute()
+        val body = resp.body?.string() ?: return@withContext null
+        Regex("""(https?://[^"'\s]+\.m3u8[^"'\s]*)""").find(body)?.value
     }
 
     private suspend fun extractFromUprot(uprotUrl: String): String? = withContext(Dispatchers.IO) {
