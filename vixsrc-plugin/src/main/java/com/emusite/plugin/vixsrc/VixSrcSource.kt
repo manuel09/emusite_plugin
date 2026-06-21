@@ -3,6 +3,7 @@ package com.emusite.plugin.vixsrc
 import com.emusite.api.Source
 import com.emusite.api.models.ContentType
 import com.emusite.api.models.Episode
+import com.emusite.api.models.HomePageSection
 import com.emusite.api.models.MediaDetails
 import com.emusite.api.models.SearchResult
 import com.emusite.api.models.StreamLink
@@ -27,11 +28,20 @@ class VixSrcSource : Source {
     private val client = OkHttpClient()
     private val json = Json { ignoreUnknownKeys = true }
 
-    override suspend fun getHomePage(): List<SearchResult> {
+    override suspend fun getHomePage(): List<HomePageSection> {
         val trending = TMDB.getTrendingMovies()
         val popular = TMDB.getPopularMovies()
-        val all = (trending.results + popular.results).distinctBy { it.id }.take(30)
-        return all.map { it.toSearchResult(MOVIE, id) }
+
+        return listOf(
+            HomePageSection(
+                name = "Trending",
+                items = trending.results.map { it.toSearchResult(MOVIE, id) }.take(20)
+            ),
+            HomePageSection(
+                name = "Popular",
+                items = popular.results.map { it.toSearchResult(MOVIE, id) }.take(20)
+            )
+        )
     }
 
     override suspend fun search(query: String, page: Int): List<SearchResult> {
