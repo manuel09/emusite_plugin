@@ -26,4 +26,9 @@ interface Source {
     suspend fun getEpisodes(url: String): List<Episode>
     suspend fun getStreamLinks(url: String): List<StreamLink>
     suspend fun getHomePage(): List<SearchResult>
+    suspend fun getHomePageSections(): List<HomePageSection> {
+        val items = getHomePage()
+        return if (items.isEmpty()) emptyList()
+        else listOf(HomePageSection(name = "Home", items = items))
+    }
 }

@@ -57,3 +57,9 @@ enum class ContentType {
     TV_SERIES,
     ANIME
 }
+
+@Serializable
+data class HomePageSection(
+    val name: String,
+    val items: List<SearchResult>
+)
