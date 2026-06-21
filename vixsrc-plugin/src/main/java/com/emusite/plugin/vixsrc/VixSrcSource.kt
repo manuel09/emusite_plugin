@@ -8,6 +8,7 @@ import com.emusite.api.models.SearchResult
 import com.emusite.api.models.StreamLink
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -105,28 +106,41 @@ class VixSrcSource : Source {
         val tmdbType = parts[0]
         val tmdbId = parts[1].toInt()
 
-        val vixUrl = if (tmdbType == "movie") {
-            "$baseUrl/movie/$tmdbId"
+        val apiUrl = if (tmdbType == "movie") {
+            "$baseUrl/api/movie/$tmdbId"
         } else {
             val season = parts.getOrElse(2) { "1" }.toInt()
             val episode = parts.getOrElse(3) { "1" }.toInt()
-            "$baseUrl/tv/$tmdbId/$season/$episode"
+            "$baseUrl/api/tv/$tmdbId/$season/$episode"
         }
-        return extractVixSrcStreams(vixUrl)
+        return extractVixSrcStreams(apiUrl)
     }
 
-    private suspend fun extractVixSrcStreams(vixUrl: String): List<StreamLink> {
+    private suspend fun extractVixSrcStreams(apiUrl: String): List<StreamLink> {
         return withContext(Dispatchers.IO) {
         try {
-            val request = Request.Builder()
-                .url(vixUrl)
+            val apiRequest = Request.Builder()
+                .url(apiUrl)
                 .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:131.0) Gecko/20100101 Firefox/131.0")
-                .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
-                .header("Accept-Language", "it-IT,it;q=0.9,en;q=0.8")
                 .build()
 
-            val response = client.newCall(request).execute()
-            val html = response.body?.string() ?: return@withContext emptyList()
+            val apiResponse = client.newCall(apiRequest).execute()
+            val apiBody = apiResponse.body?.string() ?: return@withContext emptyList()
+            val apiData = json.decodeFromString<VixApiResponse>(apiBody)
+            val embedPath = apiData.src
+
+            if (embedPath.isNullOrBlank()) return@withContext emptyList()
+
+            val embedUrl = if (embedPath.startsWith("http")) embedPath else "$baseUrl$embedPath"
+            val embedRequest = Request.Builder()
+                .url(embedUrl)
+                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:131.0) Gecko/20100101 Firefox/131.0")
+                .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+                .header("Referer", baseUrl)
+                .build()
+
+            val embedResponse = client.newCall(embedRequest).execute()
+            val html = embedResponse.body?.string() ?: return@withContext emptyList()
 
             val playlist = extractMasterPlaylist(html) ?: return@withContext emptyList()
             val params = playlist.params
@@ -219,6 +233,11 @@ class VixSrcSource : Source {
         }
     }
 }
+
+@Serializable
+data class VixApiResponse(
+    val src: String? = null
+)
 
 @kotlinx.serialization.Serializable
 data class VixPlaylistParams(
