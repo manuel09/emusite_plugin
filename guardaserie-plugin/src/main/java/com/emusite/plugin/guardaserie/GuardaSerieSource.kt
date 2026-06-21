@@ -100,22 +100,24 @@ class GuardaSerieSource : Source {
     }
 
     private suspend fun getTmdbId(title: String, doc: Document, url: String): String {
-        // Try from page
-        doc.select("script").forEach {
-            Regex("""tmdbid["\s:=]+(\d+)""", RegexOption.IGNORE_CASE).find(it.data())?.groupValues?.get(1)?.let { return it }
-        }
-        Regex("""themoviedb\.org/tv/(\d+)""").find(doc.html())?.groupValues?.get(1)?.let { return it }
+        // From poster filename: tt10970762 -> 10970762
+        val posterImg = doc.select(".fimg img, .poster img").attr("src")
+        Regex("""tt(\d+)""").find(posterImg)?.groupValues?.get(1)?.let { return it }
 
-        // Search TMDB API by title
+        // From video player script: tt10970762 -> 10970762
+        doc.select("script").forEach {
+            val d = it.data()
+            Regex("""tt(\d+)""").find(d)?.groupValues?.get(1)?.let { id -> return id }
+        }
+
+        // Fallback: search TMDB API
         try {
             val cleanTitle = title.replace(Regex("""\(.*?\)"""), "").trim()
-            val searchUrl = "https://api.themoviedb.org/3/search/tv?api_key=7b5fcf48f24a334bb09f87ce20e5f2ce&language=it-IT&query=${java.net.URLEncoder.encode(cleanTitle, "UTF-8")}"
-            val req = Request.Builder().url(searchUrl).build()
-            val resp = client.newCall(req).execute()
-            val body = resp.body?.string() ?: return ""
-            val data = json.decodeFromString<TmdbSearchResult>(body)
-            return data.results?.firstOrNull()?.id?.toString() ?: ""
-        } catch (_: Exception) { return "" }
+            val q = java.net.URLEncoder.encode(cleanTitle, "UTF-8")
+            val req = Request.Builder().url("https://api.themoviedb.org/3/search/tv?api_key=7b5fcf48f24a334bb09f87ce20e5f2ce&language=it-IT&query=$q").build()
+            val body = client.newCall(req).execute().body?.string() ?: return ""
+            json.decodeFromString<TmdbSearchResult>(body).results?.firstOrNull()?.id?.toString() ?: ""
+        } catch (_: Exception) { "" }
     }
 
     private fun getEpisodesFromTmdb(tmdbId: String): List<Episode> {
