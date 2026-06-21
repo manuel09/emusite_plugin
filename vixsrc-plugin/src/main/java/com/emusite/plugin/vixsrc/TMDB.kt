@@ -98,7 +98,7 @@ data class TmdbItem(
 ) {
     val displayTitle: String get() = title ?: name ?: "Unknown"
     val year: Int? get() = (releaseDate ?: firstAirDate)?.substringBefore("-")?.toIntOrNull()
-    val posterUrl: String? get() = posterPath?.let { "$IMAGE_BASE$it" }
+    val posterUrl: String? get() = posterPath?.let { "${TMDB.IMAGE_BASE}$it" }
 }
 
 @Serializable
