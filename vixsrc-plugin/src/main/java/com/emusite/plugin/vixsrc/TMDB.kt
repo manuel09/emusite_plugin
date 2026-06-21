@@ -47,6 +47,18 @@ object TMDB {
         return get("$BASE_URL/movie/top_rated", mapOf("page" to page.toString()))
     }
 
+    suspend fun getUpcomingMovies(page: Int = 1): TmdbSearchResponse {
+        return get("$BASE_URL/movie/upcoming", mapOf("page" to page.toString()))
+    }
+
+    suspend fun discoverMoviesByGenre(genreId: Int, page: Int = 1): TmdbSearchResponse {
+        return get("$BASE_URL/discover/movie", mapOf(
+            "with_genres" to genreId.toString(),
+            "sort_by" to "popularity.desc",
+            "page" to page.toString()
+        ))
+    }
+
     suspend fun getMovieDetails(movieId: Int): TmdbMovieDetail {
         return get("$BASE_URL/movie/$movieId")
     }

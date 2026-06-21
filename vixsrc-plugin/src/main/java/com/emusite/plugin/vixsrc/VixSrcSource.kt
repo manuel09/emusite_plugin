@@ -37,23 +37,27 @@ class VixSrcSource : Source {
     override suspend fun getHomePageSections(): List<HomePageSection> {
         val trending = TMDB.getTrendingMovies()
         val popular = TMDB.getPopularMovies()
+        val topRated = TMDB.getTopRatedMovies()
+        val upcoming = TMDB.getUpcomingMovies()
+
+        val genreSections = GENRES.map { (name, id) ->
+            try {
+                HomePageSection(
+                    name = name,
+                    items = TMDB.discoverMoviesByGenre(id).results
+                        .map { it.toSearchResult(MOVIE, id) }.take(10)
+                )
+            } catch (_: Exception) {
+                HomePageSection(name = name, items = emptyList())
+            }
+        }
 
         return listOf(
-            HomePageSection(
-                name = "Trending",
-                items = trending.results.map { it.toSearchResult(MOVIE, id) }.take(15)
-            ),
-            HomePageSection(
-                name = "Popular",
-                items = popular.results.map { it.toSearchResult(MOVIE, id) }.take(15)
-            ),
-            HomePageSection(
-                name = "Top Rated",
-                items = try {
-                    TMDB.getTopRatedMovies().results.map { it.toSearchResult(MOVIE, id) }.take(15)
-                } catch (_: Exception) { emptyList() }
-            )
-        )
+            HomePageSection(name = "Trending", items = trending.results.map { it.toSearchResult(MOVIE, id) }.take(10)),
+            HomePageSection(name = "Popular", items = popular.results.map { it.toSearchResult(MOVIE, id) }.take(10)),
+            HomePageSection(name = "Top Rated", items = topRated.results.map { it.toSearchResult(MOVIE, id) }.take(10)),
+            HomePageSection(name = "Upcoming", items = upcoming.results.map { it.toSearchResult(MOVIE, id) }.take(10)),
+        ) + genreSections
     }
 
     override suspend fun search(query: String, page: Int): List<SearchResult> {
@@ -262,6 +266,22 @@ class VixSrcSource : Source {
     companion object {
         const val MOVIE = "movie"
         const val TV = "tv"
+
+        val GENRES = listOf(
+            "Animation" to 16,
+            "Adventure" to 12,
+            "Action" to 28,
+            "Comedy" to 35,
+            "Crime" to 80,
+            "Documentary" to 99,
+            "Drama" to 18,
+            "Family" to 10751,
+            "Sci-Fi" to 878,
+            "Fantasy" to 14,
+            "Horror" to 27,
+            "Romance" to 10749,
+            "Thriller" to 53,
+        )
 
         fun TmdbItem.toSearchResult(tmdbType: String, sourceId: String): SearchResult {
             return SearchResult(
