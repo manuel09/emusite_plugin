@@ -243,6 +243,7 @@ class GuardaSerieSource : Source {
             val embedResp = client.newCall(Request.Builder().url(embedUrl).header("User-Agent", ua)
                 .header("Referer", "https://vixsrc.to").build()).execute()
             val embedHtml = embedResp.body?.string() ?: run { Log.e("GuardaSerie", "Embed empty body"); return@withContext emptyList() }
+            Log.d("GuardaSerie", "Embed HTML size: ${embedHtml.length}, has masterPlaylist: ${embedHtml.contains("masterPlaylist")}")
             
             val mp = extractMasterPlaylist(embedHtml)
             if (mp == null) { Log.e("GuardaSerie", "No masterPlaylist in embed"); return@withContext emptyList() }
