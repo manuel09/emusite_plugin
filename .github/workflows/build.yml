@@ -27,12 +27,12 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
 
       - name: Build VixSrc plugin
-        run: ./gradlew :vixsrc-plugin:assembleRelease
+        run: ./gradlew :vixsrc-plugin:assembleDebug
 
       - name: Rename to .emuplugin
         run: |
           mkdir -p builds
-          APK=$(find vixsrc-plugin/build/outputs/apk/release/ -name "*.apk" -not -name "*unsigned*" | head -1)
+          APK=$(find vixsrc-plugin/build/outputs/apk/debug/ -name "*.apk" | head -1)
           cp "$APK" builds/vixsrc-plugin-v${{ github.run_number }}.emuplugin
           echo "PLUGIN_FILE=vixsrc-plugin-v${{ github.run_number }}.emuplugin" >> $GITHUB_ENV
 
