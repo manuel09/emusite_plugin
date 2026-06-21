@@ -116,8 +116,8 @@ class GuardaSerieSource : Source {
             val q = java.net.URLEncoder.encode(cleanTitle, "UTF-8")
             val req = Request.Builder().url("https://api.themoviedb.org/3/search/tv?api_key=7b5fcf48f24a334bb09f87ce20e5f2ce&language=it-IT&query=$q").build()
             val body = client.newCall(req).execute().body?.string() ?: return ""
-            json.decodeFromString<TmdbSearchResult>(body).results?.firstOrNull()?.id?.toString() ?: ""
-        } catch (_: Exception) { "" }
+            return json.decodeFromString<TmdbSearchResult>(body).results?.firstOrNull()?.id?.toString() ?: ""
+        } catch (_: Exception) { return "" }
     }
 
     private fun getEpisodesFromTmdb(tmdbId: String): List<Episode> {
