@@ -109,16 +109,16 @@ class GuardaSerieSource : Source {
         )
     }
 
-    private suspend fun findTmdbId(title: String): String {
+    private suspend fun findTmdbId(title: String): String = withContext(Dispatchers.IO) {
         try {
             val q = java.net.URLEncoder.encode(title, "UTF-8")
             val req = Request.Builder().url("https://api.themoviedb.org/3/search/tv?api_key=7b5fcf48f24a334bb09f87ce20e5f2ce&language=it-IT&query=$q").build()
-            val body = client.newCall(req).execute().body?.string() ?: return ""
-            return json.decodeFromString<TmdbSearchResult>(body).results?.firstOrNull()?.id?.toString() ?: ""
-        } catch (_: Exception) { return "" }
+            val body = client.newCall(req).execute().body?.string() ?: return@withContext ""
+            return@withContext json.decodeFromString<TmdbSearchResult>(body).results?.firstOrNull()?.id?.toString() ?: ""
+        } catch (_: Exception) { return@withContext "" }
     }
 
-    private suspend fun getDetailsFromTmdb(tmdbId: String, url: String): MediaDetails {
+    private suspend fun getDetailsFromTmdb(tmdbId: String, url: String): MediaDetails = withContext(Dispatchers.IO) {
         val apiUrl = "https://api.themoviedb.org/3/tv/$tmdbId?api_key=7b5fcf48f24a334bb09f87ce20e5f2ce&language=it-IT"
         val req = Request.Builder().url(apiUrl).build()
         val body = client.newCall(req).execute().body?.string() ?: return emptyDetails(url)
@@ -190,7 +190,7 @@ class GuardaSerieSource : Source {
         return ""
     }
 
-    private fun getEpisodesFromTmdb(tmdbId: String): List<Episode> {
+    private suspend fun getEpisodesFromTmdb(tmdbId: String): List<Episode> = withContext(Dispatchers.IO) {
         val result = mutableListOf<Episode>()
         try {
             val apiUrl = "https://api.themoviedb.org/3/tv/$tmdbId?api_key=7b5fcf48f24a334bb09f87ce20e5f2ce&language=it-IT"
@@ -212,7 +212,7 @@ class GuardaSerieSource : Source {
                 } catch (_: Exception) {}
             }
         } catch (_: Exception) {}
-        return result
+        result
     }
 
     override suspend fun getStreamLinks(url: String): List<StreamLink> {
