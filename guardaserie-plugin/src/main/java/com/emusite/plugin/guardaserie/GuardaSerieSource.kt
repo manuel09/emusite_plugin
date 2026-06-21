@@ -85,23 +85,27 @@ class GuardaSerieSource : Source {
             .replace("-", " ").trim()
             .split(" ").joinToString(" ") { it.replaceFirstChar { c -> c.uppercase() } }
 
-        // Get data from TMDB directly
-        val tmdbId = findTmdbId(slugTitle)
+        // Always try TMDB first
+        val tmdbId = findTmdbId(slugTitle).ifBlank {
+            try {
+                val doc = get(fullUrl)
+                findTmdbId(doc.select("h1").text().replace("streaming", "").trim())
+            } catch (_: Exception) { "" }
+        }
+
         if (tmdbId.isNotBlank()) {
             return getDetailsFromTmdb(tmdbId, url)
         }
 
-        // Fallback: scrape the page
-        val doc = get(fullUrl)
-        val title = doc.select("h1").text().replace("streaming", "").trim().ifBlank { slugTitle }
-        val poster = doc.select(".fimg img, .poster img").attr("src").let { if (it.startsWith("/")) "$baseUrl$it" else it }
-        val plot = doc.select(".full-text, .fdesc").text().trim()
-
+        // Test: return dummy data to see if UI works
         return MediaDetails(
-            id = url, title = title, description = plot.ifBlank { null },
-            posterUrl = poster.ifBlank { null }, backdropUrl = poster.ifBlank { null },
+            id = url, title = slugTitle.ifBlank { "Test Show" },
+            description = "TMDB search failed for: $slugTitle",
+            posterUrl = null, backdropUrl = null,
             year = null, rating = null, genres = emptyList(),
-            type = ContentType.TV_SERIES, episodes = null
+            type = ContentType.TV_SERIES, episodes = listOf(
+                Episode("test", "Episodio test - TMDB non trovato", 1, 1, null, "test")
+            )
         )
     }
 
