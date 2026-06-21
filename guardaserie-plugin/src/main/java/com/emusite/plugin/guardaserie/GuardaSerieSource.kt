@@ -81,11 +81,13 @@ class GuardaSerieSource : Source {
         val doc = get(url)
         val title = doc.select("h1").text().replace("streaming", "").trim()
             .ifBlank {
-                // Extract from URL slug
-                url.substringAfterLast("/").substringAfter("-")
-                    .replace("-streaming.html", "").replace(".html", "")
-                    .replace("-", " ").trim()
-                    .replace(Regex("\\b\\w"), { it.value.uppercase() })
+                // Extract from URL: /dramma/5443-the-testaments-streaming.html -> The Testaments
+                url.substringAfterLast("/")
+                    .replace(Regex("""^\d+-"""), "")   // remove leading number
+                    .replace(Regex("""-streaming\.html$|\.html$"""), "")  // remove suffix
+                    .replace("-", " ")
+                    .trim()
+                    .split(" ").joinToString(" ") { it.replaceFirstChar { c -> c.uppercase() } }
             }
         val poster = doc.select(".fimg img, .poster img").attr("src").let { if (it.startsWith("/")) "$baseUrl$it" else it }
         val plot = doc.select(".full-text, .fdesc").text().trim()
