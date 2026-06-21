@@ -144,16 +144,15 @@ class OnlineSerieTVSource : Source {
     }
 
     override suspend fun getStreamLinks(url: String): List<StreamLink> {
-        val links = url.split(",").filter { it.isNotBlank() }
-        val results = mutableListOf<StreamLink>()
+        val links = url.split(",").filter { it.isNotBlank() }.filter { it.contains("uprot") }
+        if (links.isEmpty()) return emptyList()
 
         for (link in links) {
-            if (!link.contains("uprot")) continue
             try {
-                val m3u8 = extractUprotStream(link)
-                if (m3u8 != null) {
-                    results.add(StreamLink(
-                        url = m3u8,
+                val streamUrl = extractFromUprot(link)
+                if (streamUrl != null) {
+                    return listOf(StreamLink(
+                        url = streamUrl,
                         quality = "720p",
                         headers = mapOf(
                             "Referer" to "https://uprot.net/",
@@ -163,37 +162,37 @@ class OnlineSerieTVSource : Source {
                 }
             } catch (_: Exception) {}
         }
-        return results
+        return emptyList()
     }
 
-    private suspend fun extractUprotStream(uprotUrl: String): String? = withContext(Dispatchers.IO) {
-        val request = Request.Builder()
-            .url(uprotUrl)
-            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:131.0) Gecko/20100101 Firefox/131.0")
-            .header("Referer", baseUrl)
-            .build()
+    private suspend fun extractFromUprot(uprotUrl: String): String? = withContext(Dispatchers.IO) {
+        val ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:131.0) Gecko/20100101 Firefox/131.0"
+        val req = Request.Builder().url(uprotUrl).header("User-Agent", ua).header("Referer", baseUrl).build()
+        val resp = client.newCall(req).execute()
+        val finalUrl = resp.request.url.toString()
+        val html = resp.body?.string() ?: return@withContext null
 
-        val response = client.newCall(request).execute()
-        val redirectUrl = response.request.url.toString()
-        val html = response.body?.string() ?: return@withContext null
+        // Try finding any M3U8 directly
+        val m3u8 = Regex("""([^"'\s]+\.m3u8[^"'\s]*)""").find(html)?.value
+        if (m3u8 != null && m3u8.startsWith("http")) return@withContext m3u8
 
-        if (redirectUrl.contains("maxstream.video") || html.contains("maxstream.video")) {
-            return@withContext extractMaxStream(redirectUrl)
+        // Try maxstream redirect
+        if (finalUrl.contains("maxstream.video")) {
+            return@withContext extractMaxStream(finalUrl)
         }
 
-        val iframeMatch = Regex("""<iframe[^>]+src="([^"]+)""").find(html)
-        if (iframeMatch != null) {
-            val iframeUrl = iframeMatch.groupValues[1]
-            val iframeRequest = Request.Builder()
-                .url(iframeUrl)
-                .header("User-Agent", "Mozilla/5.0")
-                .header("Referer", uprotUrl)
-                .build()
-            val iframeResponse = client.newCall(iframeRequest).execute()
-            val iframeHtml = iframeResponse.body?.string() ?: return@withContext null
+        // Try iframe
+        val iframe = Regex("""<iframe[^>]+src="([^"]+)""").find(html)?.groupValues?.get(1)
+        if (iframe != null) {
+            val iReq = Request.Builder().url(iframe).header("User-Agent", ua).header("Referer", uprotUrl).build()
+            val iResp = client.newCall(iReq).execute()
+            val iHtml = iResp.body?.string() ?: return@withContext null
+            val iUrl = iResp.request.url.toString()
 
-            val m3u8Match = Regex("""(?:file|src):\s*"([^"]+\.m3u8[^"]*)""").find(iframeHtml)
-            if (m3u8Match != null) return@withContext m3u8Match.groupValues[1]
+            val m = Regex("""(?:file|src):\s*"([^"]+\.m3u8[^"]*)""").find(iHtml)?.groupValues?.get(1)
+            if (m != null) return@withContext m
+
+            if (iUrl.contains("maxstream")) return@withContext extractMaxStream(iUrl)
         }
 
         null
