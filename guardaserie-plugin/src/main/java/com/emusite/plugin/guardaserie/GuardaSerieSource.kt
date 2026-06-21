@@ -221,45 +221,30 @@ class GuardaSerieSource : Source {
         val tmdbId = parts[1]
         val season = parts[2]
         val episode = parts[3]
-        return extractVixStreams("https://vixsrc.to/tv/$tmdbId/$season/$episode?lang=it")
+        return extractVixStreams("https://vixsrc.to/api/tv/$tmdbId/$season/$episode")
     }
 
-    private suspend fun extractVixStreams(pageUrl: String): List<StreamLink> = withContext(Dispatchers.IO) {
+    private suspend fun extractVixStreams(apiUrl: String): List<StreamLink> = withContext(Dispatchers.IO) {
         try {
             val ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:131.0) Gecko/20100101 Firefox/131.0"
-            // Step 1: Load vixsrc page to get embed URL from script
-            val req = Request.Builder().url(pageUrl).header("User-Agent", ua).build()
-            val html = client.newCall(req).execute().body?.string() ?: return@withContext emptyList()
-            
-            // Step 2: Try masterPlaylist directly first
-            val mp = extractMasterPlaylist(html)
-            if (mp != null) {
-                val u = mp.url + "?token=" + mp.params.token + "&expires=" + mp.params.expires
-                return@withContext listOf(StreamLink(url = if (mp.canPlayFHD) "$u&h=1" else u,
-                    quality = if (mp.canPlayFHD) "1080p" else "720p",
-                    headers = mapOf("Referer" to "https://vixsrc.to", "Origin" to "https://vixsrc.to",
-                        "User-Agent" to ua)))
-            }
-            
-            // Step 3: Try API endpoint to get embed URL
-            val tmdbId = Regex("""/tv/(\d+)""").find(pageUrl)?.groupValues?.get(1) ?: return@withContext emptyList()
-            val apiUrl = pageUrl.replace("/tv/", "/api/tv/")
+            // Get embed URL from API
             val apiReq = Request.Builder().url(apiUrl).header("User-Agent", ua).build()
             val apiBody = client.newCall(apiReq).execute().body?.string() ?: return@withContext emptyList()
             val apiData = json.decodeFromString<JsonObject>(apiBody)
             val embedPath = apiData["src"]?.toString()?.removeSurrounding("\"") ?: return@withContext emptyList()
             
+            // Fetch embed page
             val embedUrl = if (embedPath.startsWith("http")) embedPath else "https://vixsrc.to$embedPath"
             val embedReq = Request.Builder().url(embedUrl).header("User-Agent", ua)
                 .header("Referer", "https://vixsrc.to").build()
             val embedHtml = client.newCall(embedReq).execute().body?.string() ?: return@withContext emptyList()
             
-            val mp2 = extractMasterPlaylist(embedHtml) ?: return@withContext emptyList()
-            val u2 = mp2.url + "?token=" + mp2.params.token + "&expires=" + mp2.params.expires
-            listOf(StreamLink(url = if (mp2.canPlayFHD) "$u2&h=1" else u2,
-                quality = if (mp2.canPlayFHD) "1080p" else "720p",
-                headers = mapOf("Referer" to "https://vixsrc.to", "Origin" to "https://vixsrc.to",
-                    "User-Agent" to ua)))
+            // Extract masterPlaylist
+            val mp = extractMasterPlaylist(embedHtml) ?: return@withContext emptyList()
+            val u = mp.url + "?token=" + mp.params.token + "&expires=" + mp.params.expires
+            listOf(StreamLink(url = if (mp.canPlayFHD) "$u&h=1" else u,
+                quality = if (mp.canPlayFHD) "1080p" else "720p",
+                headers = mapOf("Referer" to "https://vixsrc.to", "Origin" to "https://vixsrc.to", "User-Agent" to ua)))
         } catch (_: Exception) { emptyList() }
     }
 
