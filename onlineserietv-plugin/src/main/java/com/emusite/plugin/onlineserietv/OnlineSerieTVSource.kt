@@ -169,62 +169,52 @@ class OnlineSerieTVSource(private val appContext: Context? = null) : Source {
 
     private suspend fun extractFromUprot(uprotUrl: String): String? = withContext(Dispatchers.IO) {
         val ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:131.0) Gecko/20100101 Firefox/131.0"
-
-        // Step 1: Follow uprot redirect chain
         var currentUrl = uprotUrl
+
         for (i in 1..5) {
             val req = Request.Builder().url(currentUrl).header("User-Agent", ua).build()
             val resp = client.newCall(req).execute()
             val body = resp.body?.string() ?: break
             val finalUrl = resp.request.url.toString()
+            val ct = resp.header("Content-Type", "") ?: ""
 
-            // Check for captcha
-            val captchaMatch = Regex("""atob\('([^']+)'\)""").find(body)
-            if (captchaMatch != null) {
-                val base64Data = captchaMatch.groupValues[1]
-                val captchaImg = try { String(Base64.decode(base64Data, Base64.DEFAULT)) } catch (_: Exception) { null }
-                if (captchaImg != null) {
-                    // Extract more captcha image data
-                    val imgMatch = Regex("""src="data:image[^"]+base64,([^"]+)""").find(body)
-                    val imgBase64 = imgMatch?.groupValues?.get(1) ?: continue
-
-                    // Show dialog to user
-                    val answer = withContext(Dispatchers.Main) {
-                        solveCaptcha(imgBase64, appContext)
-                    }
-                    if (answer.isNullOrBlank()) return@withContext null
-
-                    // Extract form action URL
-                    val actionMatch = Regex("""action="([^"]+)""").find(body)
-                    val postUrl = actionMatch?.groupValues?.get(1) ?: finalUrl
-
-                    // Submit captcha answer
-                    val formBody = FormBody.Builder()
-                        .add("captcha", answer)
-                        .build()
-                    val postReq = Request.Builder().url(postUrl).header("User-Agent", ua)
-                        .header("Referer", currentUrl).post(formBody).build()
-                    val postResp = client.newCall(postReq).execute()
-                    val postBody = postResp.body?.string() ?: break
-                    currentUrl = postResp.request.url.toString()
-                    continue
-                }
+            // Direct m3u8
+            if (ct.contains("mpegurl") || ct.contains("vnd.apple.mpegurl")) {
+                return@withContext currentUrl
             }
 
-            // Check for m3u8 or stream
-            val m3u8 = Regex("""([^"'\s]+\.m3u8[^"'\s]*)""").find(body)?.value
-            if (m3u8 != null && m3u8.startsWith("http")) return@withContext m3u8
+            // Find any m3u8 URL
+            val m3u8 = Regex("""(https?://[^"'\s]+\.m3u8[^"'\s]*)""").find(body)?.value
+            if (m3u8 != null) return@withContext m3u8
 
-            // Check iframe
+            // maxstream redirect
+            if (finalUrl.contains("maxstream.video") || body.contains("maxstream.video")) {
+                val ms = extractMaxStream(finalUrl)
+                if (ms != null) return@withContext ms
+            }
+
+            // Follow iframe
             val iframe = Regex("""<iframe[^>]+src="([^"]+)""").find(body)?.groupValues?.get(1)
             if (iframe != null) {
                 currentUrl = iframe
                 continue
             }
 
-            // Check maxstream redirect
-            if (finalUrl.contains("maxstream.video") || body.contains("maxstream.video")) {
-                return@withContext extractMaxStream(finalUrl)
+            // Try captcha detection
+            val captchaBase64 = Regex("""src="data:image[^"]+base64,([^"]+)""").find(body)?.groupValues?.get(1)
+            if (captchaBase64 != null && appContext != null) {
+                val answer = withContext(Dispatchers.Main) {
+                    solveCaptcha(captchaBase64, appContext)
+                }
+                if (!answer.isNullOrBlank()) {
+                    val action = Regex("""action="([^"]+)""").find(body)?.groupValues?.get(1) ?: finalUrl
+                    val postReq = Request.Builder().url(action)
+                        .header("User-Agent", ua).header("Referer", currentUrl)
+                        .post(FormBody.Builder().add("captcha", answer).build()).build()
+                    val postResp = client.newCall(postReq).execute()
+                    currentUrl = postResp.request.url.toString()
+                    continue
+                }
             }
 
             break
