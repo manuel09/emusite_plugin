@@ -98,7 +98,7 @@ class GuardaSerieSource : Source {
         }
 
         // Test: return dummy data to see if UI works
-        return MediaDetails(
+        MediaDetails(
             id = url, title = slugTitle.ifBlank { "Test Show" },
             description = "TMDB search failed for: $slugTitle",
             posterUrl = null, backdropUrl = null,
@@ -121,9 +121,9 @@ class GuardaSerieSource : Source {
     private suspend fun getDetailsFromTmdb(tmdbId: String, url: String): MediaDetails = withContext(Dispatchers.IO) {
         val apiUrl = "https://api.themoviedb.org/3/tv/$tmdbId?api_key=7b5fcf48f24a334bb09f87ce20e5f2ce&language=it-IT"
         val req = Request.Builder().url(apiUrl).build()
-        val body = client.newCall(req).execute().body?.string() ?: return emptyDetails(url)
+        val body = client.newCall(req).execute().body?.string() ?: return@withContext emptyDetails(url)
         val data = json.decodeFromString<JsonObject>(body)
-        val title = data["name"]?.toString()?.removeSurrounding("\"") ?: return emptyDetails(url)
+        val title = data["name"]?.toString()?.removeSurrounding("\"") ?: return@withContext emptyDetails(url)
         val poster = data["poster_path"]?.toString()?.removeSurrounding("\"")?.let { "https://image.tmdb.org/t/p/w500$it" }
         val plot = data["overview"]?.toString()?.removeSurrounding("\"")
         val year = data["first_air_date"]?.toString()?.removeSurrounding("\"")?.substringBefore("-")?.toIntOrNull()
@@ -131,7 +131,7 @@ class GuardaSerieSource : Source {
 
         val episodes = getEpisodesFromTmdb(tmdbId)
 
-        return MediaDetails(
+        MediaDetails(
             id = url, title = title, description = plot,
             posterUrl = poster, backdropUrl = poster,
             year = year, rating = rating, genres = emptyList(),
@@ -196,7 +196,7 @@ class GuardaSerieSource : Source {
             val apiUrl = "https://api.themoviedb.org/3/tv/$tmdbId?api_key=7b5fcf48f24a334bb09f87ce20e5f2ce&language=it-IT"
             val req = Request.Builder().url(apiUrl).build()
             val resp = client.newCall(req).execute()
-            val body = resp.body?.string() ?: return result
+            val body = resp.body?.string() ?: return@withContext result
             val data = json.decodeFromString<TmdbShow>(body)
             data.seasons?.filter { it.seasonNumber > 0 }?.forEach { season ->
                 val sUrl = "https://api.themoviedb.org/3/tv/$tmdbId/season/${season.seasonNumber}?api_key=7b5fcf48f24a334bb09f87ce20e5f2ce&language=it-IT"
