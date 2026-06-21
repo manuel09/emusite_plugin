@@ -80,6 +80,13 @@ class GuardaSerieSource : Source {
     override suspend fun getDetails(url: String): MediaDetails {
         val doc = get(url)
         val title = doc.select("h1").text().replace("streaming", "").trim()
+            .ifBlank {
+                // Extract from URL slug
+                url.substringAfterLast("/").substringAfter("-")
+                    .replace("-streaming.html", "").replace(".html", "")
+                    .replace("-", " ").trim()
+                    .replace(Regex("\\b\\w"), { it.value.uppercase() })
+            }
         val poster = doc.select(".fimg img, .poster img").attr("src").let { if (it.startsWith("/")) "$baseUrl$it" else it }
         val plot = doc.select(".full-text, .fdesc").text().trim()
         val genres = doc.select(".fgenres a, .finfo a[href*=/genre/]").map { it.text() }
