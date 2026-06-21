@@ -94,7 +94,8 @@ class GuardaSerieSource : Source {
 
     override suspend fun getEpisodes(url: String): List<Episode> {
         val doc = get(url)
-        val tmdbId = getTmdbId(title, doc, url)
+        val showTitle = doc.select("h1").text().replace("streaming", "").trim()
+        val tmdbId = getTmdbId(showTitle, doc, url)
         return if (tmdbId.isNotBlank() && tmdbId != "0") getEpisodesFromTmdb(tmdbId) else emptyList()
     }
 
