@@ -10,6 +10,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.boolean
+import kotlinx.serialization.json.jsonObject
 import okhttp3.OkHttpClient
 import okhttp3.Request
 
@@ -181,10 +184,18 @@ class VixSrcSource : Source {
         for (match in matches) {
             val script = match.groupValues[1]
             if (script.contains("masterPlaylist")) {
-                val masterPlaylistObj = extractJsObject(script)
                 return try {
-                    json.decodeFromString<VixPlaylist>(masterPlaylistObj)
+                    val jsObj = extractJsObject(script)
+                    val root = json.decodeFromString<JsonObject>(jsObj)
+                    val playlist = json.decodeFromString<VixPlaylist>(
+                        root["masterPlaylist"]?.toString() ?: "{}"
+                    )
+                    val canPlayFHD = root["canPlayFHD"]?.let {
+                        try { json.decodeFromString<Boolean>(it.toString()) } catch (_: Exception) { false }
+                    } ?: false
+                    playlist.copy(canPlayFHD = canPlayFHD)
                 } catch (e: Exception) {
+                    e.printStackTrace()
                     null
                 }
             }
