@@ -37,18 +37,18 @@ class GuardaSerieSource : Source {
         getHomePageSections().flatMap { it.items }
 
     override suspend fun getHomePageSections(): List<HomePageSection> = coroutineScope {
-        val sections = listOf(
-            "I titoli del momento" to "$baseUrl/i-titoli-del-momento/",
-            "Top IMDB" to "$baseUrl/top-imdb/",
+        val mainDoc = get(baseUrl)
+        val mainItems = parseItems(mainDoc).take(20)
+        val sections = mutableListOf<HomePageSection>()
+        if (mainItems.isNotEmpty()) sections.add(HomePageSection("I titoli del momento", mainItems))
+
+        val cats = listOf(
             "Dramma" to "$baseUrl/dramma/",
             "Commedia" to "$baseUrl/commedia/",
-            "Crime" to "$baseUrl/crime/",
             "Animazione" to "$baseUrl/animazione/",
-            "Fantascienza" to "$baseUrl/fantascienza/",
-            "Horror" to "$baseUrl/horror/",
-            "Mistero" to "$baseUrl/mistero/",
+            "Crime" to "$baseUrl/crime/",
         )
-        sections.map { (name, url) ->
+        cats.map { (name, url) ->
             async {
                 try {
                     val doc = get(url)
@@ -56,7 +56,9 @@ class GuardaSerieSource : Source {
                     if (items.isNotEmpty()) HomePageSection(name, items.take(15)) else null
                 } catch (_: Exception) { null }
             }
-        }.mapNotNull { it.await() }
+        }.mapNotNull { it.await() }.let { sections.addAll(it) }
+
+        sections
     }
 
     private fun parseItems(doc: Document): List<SearchResult> {
