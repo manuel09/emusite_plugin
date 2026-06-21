@@ -1,5 +1,7 @@
 package com.emusite.plugin.vixsrc
 
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -64,7 +66,7 @@ object TMDB {
             .header("Accept", "application/json")
             .build()
 
-        return withContext(kotlinx.coroutines.Dispatchers.IO) {
+        return withContext(Dispatchers.IO) {
             val response = client.newCall(request).execute()
             if (!response.isSuccessful) {
                 throw IOException("TMDB API error: ${response.code}")

@@ -6,6 +6,8 @@ import com.emusite.api.models.Episode
 import com.emusite.api.models.MediaDetails
 import com.emusite.api.models.SearchResult
 import com.emusite.api.models.StreamLink
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -113,8 +115,9 @@ class VixSrcSource : Source {
         return extractVixSrcStreams(vixUrl)
     }
 
-    private fun extractVixSrcStreams(vixUrl: String): List<StreamLink> {
-        return try {
+    private suspend fun extractVixSrcStreams(vixUrl: String): List<StreamLink> {
+        return withContext(Dispatchers.IO) {
+        try {
             val request = Request.Builder()
                 .url(vixUrl)
                 .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:131.0) Gecko/20100101 Firefox/131.0")
@@ -123,9 +126,9 @@ class VixSrcSource : Source {
                 .build()
 
             val response = client.newCall(request).execute()
-            val html = response.body?.string() ?: return emptyList()
+            val html = response.body?.string() ?: return@withContext emptyList()
 
-            val playlist = extractMasterPlaylist(html) ?: return emptyList()
+            val playlist = extractMasterPlaylist(html) ?: return@withContext emptyList()
             val params = playlist.params
             val token = params.token
             val expires = params.expires
@@ -153,6 +156,7 @@ class VixSrcSource : Source {
         } catch (e: Exception) {
             e.printStackTrace()
             emptyList()
+        }
         }
     }
 
