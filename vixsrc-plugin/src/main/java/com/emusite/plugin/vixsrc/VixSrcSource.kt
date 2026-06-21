@@ -1,0 +1,230 @@
+package com.emusite.plugin.vixsrc
+
+import com.emusite.api.Source
+import com.emusite.api.models.ContentType
+import com.emusite.api.models.Episode
+import com.emusite.api.models.MediaDetails
+import com.emusite.api.models.SearchResult
+import com.emusite.api.models.StreamLink
+import kotlinx.serialization.json.Json
+import okhttp3.OkHttpClient
+import okhttp3.Request
+
+class VixSrcSource : Source {
+    override val id = "vixsrc_movies"
+    override val name = "VixSrc"
+    override val baseUrl = "https://vixsrc.to"
+    override val type = ContentType.MOVIE
+    override val language = "it"
+    override val isNsfw = false
+
+    private val client = OkHttpClient()
+    private val json = Json { ignoreUnknownKeys = true }
+
+    override suspend fun getHomePage(): List<SearchResult> {
+        val trending = TMDB.getTrendingMovies()
+        val popular = TMDB.getPopularMovies()
+        val all = (trending.results + popular.results).distinctBy { it.id }.take(30)
+        return all.map { it.toSearchResult(MOVIE, id) }
+    }
+
+    override suspend fun search(query: String, page: Int): List<SearchResult> {
+        val movies = TMDB.searchMovies(query, page)
+        val tvs = TMDB.searchTv(query, page)
+        return (movies.results.map { it.toSearchResult(MOVIE, id) } +
+                tvs.results.map { it.toSearchResult(TV, id) })
+    }
+
+    override suspend fun getDetails(url: String): MediaDetails {
+        val parts = url.split(":")
+        val tmdbType = parts[0]
+        val tmdbId = parts[1].toInt()
+
+        return if (tmdbType == "movie") {
+            val movie = TMDB.getMovieDetails(tmdbId)
+            MediaDetails(
+                id = url,
+                title = movie.title,
+                description = movie.overview,
+                posterUrl = movie.posterUrl,
+                backdropUrl = movie.backdropPath?.let { "$TMDB.IMAGE_BASE_ORIGINAL$it" },
+                year = movie.year,
+                rating = movie.voteAverage,
+                genres = movie.genres.map { it.name },
+                type = ContentType.MOVIE,
+                episodes = null
+            )
+        } else {
+            val tv = TMDB.getTvDetails(tmdbId)
+            MediaDetails(
+                id = url,
+                title = tv.name,
+                description = tv.overview,
+                posterUrl = tv.posterUrl,
+                backdropUrl = tv.backdropPath?.let { "$TMDB.IMAGE_BASE_ORIGINAL$it" },
+                year = tv.year,
+                rating = tv.voteAverage,
+                genres = tv.genres.map { it.name },
+                type = ContentType.TV_SERIES,
+                episodes = null
+            )
+        }
+    }
+
+    override suspend fun getEpisodes(url: String): List<Episode> {
+        val parts = url.split(":")
+        val tmdbType = parts[0]
+        if (tmdbType != "tv") return emptyList()
+
+        val tmdbId = parts[1].toInt()
+        val tv = TMDB.getTvDetails(tmdbId)
+        return tv.seasons?.take(10)?.flatMap { season ->
+            try {
+                val seasonDetail = TMDB.getTvSeason(tmdbId, season.seasonNumber)
+                seasonDetail.episodes.map { ep ->
+                    val epId = "tv:$tmdbId:${season.seasonNumber}:${ep.episodeNumber}"
+                    Episode(
+                        id = epId,
+                        title = ep.name,
+                        season = season.seasonNumber,
+                        episode = ep.episodeNumber,
+                        thumbnailUrl = ep.stillPath?.let { "$TMDB.IMAGE_BASE$it" },
+                        url = epId
+                    )
+                }
+            } catch (e: Exception) {
+                emptyList()
+            }
+        } ?: emptyList()
+    }
+
+    override suspend fun getStreamLinks(url: String): List<StreamLink> {
+        val parts = url.split(":")
+        val tmdbType = parts[0]
+        val tmdbId = parts[1].toInt()
+
+        val vixUrl = if (tmdbType == "movie") {
+            "$baseUrl/movie/$tmdbId"
+        } else {
+            val season = parts.getOrElse(2) { "1" }.toInt()
+            val episode = parts.getOrElse(3) { "1" }.toInt()
+            "$baseUrl/tv/$tmdbId/$season/$episode"
+        }
+        return extractVixSrcStreams(vixUrl)
+    }
+
+    private fun extractVixSrcStreams(vixUrl: String): List<StreamLink> {
+        return try {
+            val request = Request.Builder()
+                .url(vixUrl)
+                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:131.0) Gecko/20100101 Firefox/131.0")
+                .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+                .header("Accept-Language", "it-IT,it;q=0.9,en;q=0.8")
+                .build()
+
+            val response = client.newCall(request).execute()
+            val html = response.body?.string() ?: return emptyList()
+
+            val playlist = extractMasterPlaylist(html) ?: return emptyList()
+            val params = playlist.params
+            val token = params.token
+            val expires = params.expires
+            var playlistUrl = playlist.url
+
+            playlistUrl = if ("?b" in playlistUrl) {
+                playlistUrl.replace("?b:1", "?b=1")
+            } else {
+                playlistUrl
+            }
+            playlistUrl = "$playlistUrl?token=$token&expires=$expires"
+            if (playlist.canPlayFHD) {
+                playlistUrl += "&h=1"
+            }
+
+            listOf(
+                StreamLink(
+                    url = playlistUrl,
+                    quality = if (playlist.canPlayFHD) "1080p" else "720p",
+                    headers = mapOf(
+                        "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:131.0) Gecko/20100101 Firefox/131.0"
+                    )
+                )
+            )
+        } catch (e: Exception) {
+            e.printStackTrace()
+            emptyList()
+        }
+    }
+
+    private fun extractMasterPlaylist(html: String): VixPlaylist? {
+        val scriptRegex = Regex("""<script[^>]*>([\s\S]*?)</script>""", RegexOption.MULTILINE)
+        val matches = scriptRegex.findAll(html)
+
+        for (match in matches) {
+            val script = match.groupValues[1]
+            if (script.contains("masterPlaylist")) {
+                val masterPlaylistObj = extractJsObject(script)
+                return try {
+                    json.decodeFromString<VixPlaylist>(masterPlaylistObj)
+                } catch (e: Exception) {
+                    null
+                }
+            }
+        }
+        return null
+    }
+
+    private fun extractJsObject(script: String): String {
+        val parts = Regex("""window\.(\w+)\s*=""")
+            .split(script)
+            .drop(1)
+
+        val keys = Regex("""window\.(\w+)\s*=""")
+            .findAll(script)
+            .map { it.groupValues[1] }
+            .toList()
+
+        val jsonObjects = keys.zip(parts).map { (key, value) ->
+            val cleaned = value
+                .replace(";", "")
+                .replace(Regex("""(\{|\[|,)\s*(\w+)\s*:"""), "$1 \"$2\":")
+                .replace(Regex(""",(\s*[}\]])"""), "$1")
+                .trim()
+            "\"$key\": $cleaned"
+        }
+
+        return "{\n${jsonObjects.joinToString(",\n")}\n}".replace("'", "\"")
+    }
+
+    companion object {
+        const val MOVIE = "movie"
+        const val TV = "tv"
+
+        fun TmdbItem.toSearchResult(tmdbType: String, sourceId: String): SearchResult {
+            return SearchResult(
+                id = "$tmdbType:${this.id}",
+                title = this.displayTitle,
+                posterUrl = this.posterUrl,
+                year = this.year,
+                type = when (tmdbType) {
+                    "movie" -> ContentType.MOVIE
+                    else -> ContentType.TV_SERIES
+                },
+                sourceId = sourceId
+            )
+        }
+    }
+}
+
+@kotlinx.serialization.Serializable
+data class VixPlaylistParams(
+    val token: String = "",
+    val expires: String = ""
+)
+
+@kotlinx.serialization.Serializable
+data class VixPlaylist(
+    val url: String = "",
+    val params: VixPlaylistParams = VixPlaylistParams(),
+    val canPlayFHD: Boolean = false
+)
