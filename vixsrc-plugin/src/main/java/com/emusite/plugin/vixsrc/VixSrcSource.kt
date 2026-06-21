@@ -28,18 +28,24 @@ class VixSrcSource : Source {
     private val client = OkHttpClient()
     private val json = Json { ignoreUnknownKeys = true }
 
-    override suspend fun getHomePage(): List<HomePageSection> {
+    override suspend fun getHomePage(): List<SearchResult> {
+        val trending = TMDB.getTrendingMovies()
+        val popular = TMDB.getPopularMovies()
+        return (trending.results + popular.results).distinctBy { it.id }.map { it.toSearchResult(MOVIE, id) }
+    }
+
+    override suspend fun getHomePageSections(): List<HomePageSection> {
         val trending = TMDB.getTrendingMovies()
         val popular = TMDB.getPopularMovies()
 
         return listOf(
             HomePageSection(
                 name = "Trending",
-                items = trending.results.map { it.toSearchResult(MOVIE, id) }.take(20)
+                items = trending.results.map { it.toSearchResult(MOVIE, id) }.take(15)
             ),
             HomePageSection(
                 name = "Popular",
-                items = popular.results.map { it.toSearchResult(MOVIE, id) }.take(20)
+                items = popular.results.map { it.toSearchResult(MOVIE, id) }.take(15)
             )
         )
     }
