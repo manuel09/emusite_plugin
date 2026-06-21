@@ -115,7 +115,7 @@ data class TmdbMovieDetail(
     val videos: TmdbVideos? = null
 ) {
     val year: Int? get() = releaseDate?.substringBefore("-")?.toIntOrNull()
-    val posterUrl: String? get() = posterPath?.let { "$IMAGE_BASE$it" }
+    val posterUrl: String? get() = posterPath?.let { "${TMDB.IMAGE_BASE}$it" }
 }
 
 @Serializable
@@ -134,7 +134,7 @@ data class TmdbTvDetail(
     @SerialName("episode_run_time") val episodeRunTime: List<Int> = emptyList()
 ) {
     val year: Int? get() = firstAirDate?.substringBefore("-")?.toIntOrNull()
-    val posterUrl: String? get() = posterPath?.let { "$IMAGE_BASE$it" }
+    val posterUrl: String? get() = posterPath?.let { "${TMDB.IMAGE_BASE}$it" }
 }
 
 @Serializable
