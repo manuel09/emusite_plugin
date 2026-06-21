@@ -43,6 +43,10 @@ object TMDB {
         return get("$BASE_URL/tv/popular", mapOf("page" to page.toString()))
     }
 
+    suspend fun getTopRatedMovies(page: Int = 1): TmdbSearchResponse {
+        return get("$BASE_URL/movie/top_rated", mapOf("page" to page.toString()))
+    }
+
     suspend fun getMovieDetails(movieId: Int): TmdbMovieDetail {
         return get("$BASE_URL/movie/$movieId")
     }

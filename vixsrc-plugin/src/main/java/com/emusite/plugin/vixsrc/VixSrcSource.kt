@@ -46,6 +46,12 @@ class VixSrcSource : Source {
             HomePageSection(
                 name = "Popular",
                 items = popular.results.map { it.toSearchResult(MOVIE, id) }.take(15)
+            ),
+            HomePageSection(
+                name = "Top Rated",
+                items = try {
+                    TMDB.getTopRatedMovies().results.map { it.toSearchResult(MOVIE, id) }.take(15)
+                } catch (_: Exception) { emptyList() }
             )
         )
     }
