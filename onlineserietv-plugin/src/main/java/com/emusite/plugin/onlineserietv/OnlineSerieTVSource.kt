@@ -13,6 +13,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
+import java.util.concurrent.TimeUnit
 
 class OnlineSerieTVSource(private val appContext: Context? = null) : Source {
     override val id = "onlineserietv"
@@ -22,7 +23,11 @@ class OnlineSerieTVSource(private val appContext: Context? = null) : Source {
     override val language = "it"
     override val isNsfw = false
 
-    private val client = OkHttpClient()
+    private val client = OkHttpClient.Builder()
+        .connectTimeout(10, TimeUnit.SECONDS)
+        .readTimeout(10, TimeUnit.SECONDS)
+        .followRedirects(true)
+        .build()
 
     private suspend fun get(url: String): Document = withContext(Dispatchers.IO) {
         val request = Request.Builder()
