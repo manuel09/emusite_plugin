@@ -59,8 +59,8 @@ class GuardaSerieSource : Source {
     private fun parseItems(doc: Document): List<SearchResult> {
         return doc.select("a.ratio").mapNotNull { el ->
             val href = el.attr("href")
-            val title = el.attr("title").ifBlank { el.select("img").attr("alt") }
-            val poster = el.select("img").attr("src")
+            val title = el.attr("title").ifBlank { el.select("img").attr("alt").ifBlank { return@mapNotNull null } }
+            val poster = el.select("img").attr("src").let { if (it.startsWith("/")) "$baseUrl$it" else it }
             if (href.isNotBlank() && title.isNotBlank() && href != "#")
                 SearchResult(href, title, poster.ifBlank { null }, null, ContentType.TV_SERIES, id)
             else null
@@ -75,10 +75,10 @@ class GuardaSerieSource : Source {
     override suspend fun getDetails(url: String): MediaDetails {
         val doc = get(url)
         val title = doc.select("h1").text().replace("streaming", "").trim()
-        val poster = doc.select(".fimg img, .poster img").attr("src")
+        val poster = doc.select(".fimg img, .poster img").attr("src").let { if (it.startsWith("/")) "$baseUrl$it" else it }
         val plot = doc.select(".full-text, .fdesc").text().trim()
         val genres = doc.select(".fgenres a, .finfo a[href*=/genre/]").map { it.text() }
-        val tmdbId = extractTmdbId(doc)
+        val tmdbId = getTmdbId(title, doc, url)
 
         val episodes = if (tmdbId.isNotBlank() && tmdbId != "0") {
             getEpisodesFromTmdb(tmdbId)
@@ -94,19 +94,27 @@ class GuardaSerieSource : Source {
 
     override suspend fun getEpisodes(url: String): List<Episode> {
         val doc = get(url)
-        val tmdbId = extractTmdbId(doc)
+        val tmdbId = getTmdbId(title, doc, url)
         return if (tmdbId.isNotBlank() && tmdbId != "0") getEpisodesFromTmdb(tmdbId) else emptyList()
     }
 
-    private fun extractTmdbId(doc: Document): String {
+    private suspend fun getTmdbId(title: String, doc: Document, url: String): String {
+        // Try from page
         doc.select("script").forEach {
-            val m = Regex("""tmdbid["\s:=]+(\d+)""", RegexOption.IGNORE_CASE).find(it.data())
-            m?.groupValues?.get(1)?.let { return it }
+            Regex("""tmdbid["\s:=]+(\d+)""", RegexOption.IGNORE_CASE).find(it.data())?.groupValues?.get(1)?.let { return it }
         }
-        val all = doc.html()
-        Regex("""themoviedb\.org/tv/(\d+)""").find(all)?.groupValues?.get(1)?.let { return it }
-        Regex("""tmdb.*?(\d{5,})""", RegexOption.IGNORE_CASE).find(all)?.groupValues?.get(1)?.let { return it }
-        return ""
+        Regex("""themoviedb\.org/tv/(\d+)""").find(doc.html())?.groupValues?.get(1)?.let { return it }
+
+        // Search TMDB API by title
+        try {
+            val cleanTitle = title.replace(Regex("""\(.*?\)"""), "").trim()
+            val searchUrl = "https://api.themoviedb.org/3/search/tv?api_key=7b5fcf48f24a334bb09f87ce20e5f2ce&language=it-IT&query=${java.net.URLEncoder.encode(cleanTitle, "UTF-8")}"
+            val req = Request.Builder().url(searchUrl).build()
+            val resp = client.newCall(req).execute()
+            val body = resp.body?.string() ?: return ""
+            val data = json.decodeFromString<TmdbSearchResult>(body)
+            return data.results?.firstOrNull()?.id?.toString() ?: ""
+        } catch (_: Exception) { return "" }
     }
 
     private fun getEpisodesFromTmdb(tmdbId: String): List<Episode> {
@@ -181,6 +189,8 @@ class GuardaSerieSource : Source {
         }.replace("'", "\"") + "}"
     }
 
+    @Serializable data class TmdbSearchResult(val results: List<TmdbSearchItem>? = null)
+    @Serializable data class TmdbSearchItem(val id: Int = 0)
     @Serializable data class TmdbShow(val seasons: List<TmdbSeason>? = null)
     @Serializable data class TmdbSeason(@kotlinx.serialization.SerialName("season_number") val seasonNumber: Int = 0)
     @Serializable data class TmdbSeasonData(val episodes: List<TmdbEp>? = null)
