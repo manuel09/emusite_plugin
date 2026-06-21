@@ -79,16 +79,13 @@ class GuardaSerieSource : Source {
 
     override suspend fun getDetails(url: String): MediaDetails {
         val doc = get(url)
-        val title = doc.select("h1").text().replace("streaming", "").trim()
-            .ifBlank {
-                // Extract from URL: /dramma/5443-the-testaments-streaming.html -> The Testaments
-                url.substringAfterLast("/")
-                    .replace(Regex("""^\d+-"""), "")   // remove leading number
-                    .replace(Regex("""-streaming\.html$|\.html$"""), "")  // remove suffix
-                    .replace("-", " ")
-                    .trim()
-                    .split(" ").joinToString(" ") { it.replaceFirstChar { c -> c.uppercase() } }
-            }
+        val h1Title = doc.select("h1").text().replace("streaming", "").trim()
+        val slugTitle = url.substringAfterLast("/")
+            .replace(Regex("""^\d+-"""), "")
+            .replace(Regex("""-streaming\.html$|\.html$"""), "")
+            .replace("-", " ").trim()
+            .split(" ").joinToString(" ") { it.replaceFirstChar { c -> c.uppercase() } }
+        val title = h1Title.ifBlank { slugTitle }
         val poster = doc.select(".fimg img, .poster img").attr("src").let { if (it.startsWith("/")) "$baseUrl$it" else it }
         val plot = doc.select(".full-text, .fdesc").text().trim()
         val genres = doc.select(".fgenres a, .finfo a[href*=/genre/]").map { it.text() }
@@ -114,25 +111,27 @@ class GuardaSerieSource : Source {
     }
 
     private suspend fun getTmdbId(title: String, doc: Document, url: String): String {
-        // Search TMDB by title
-        try {
-            val cleanTitle = title.replace(Regex("""\(.*?\)"""), "").replace("streaming", "").trim()
-            val q = java.net.URLEncoder.encode(cleanTitle, "UTF-8")
-            val req = Request.Builder().url("https://api.themoviedb.org/3/search/tv?api_key=7b5fcf48f24a334bb09f87ce20e5f2ce&language=it-IT&query=$q").build()
-            val body = client.newCall(req).execute().body?.string() ?: return ""
-            val id = json.decodeFromString<TmdbSearchResult>(body).results?.firstOrNull()?.id?.toString()
-            if (!id.isNullOrBlank()) return id
-        } catch (_: Exception) {}
+        // Try different title variants
+        val titles = listOfNotNull(
+            title.takeIf { it.isNotBlank() },
+            url.substringAfterLast("/")
+                .replace(Regex("""^\d+-"""), "")
+                .replace(Regex("""-streaming\.html$|\.html$"""), "")
+                .replace("-", " ").trim()
+                .split(" ").joinToString(" ") { it.replaceFirstChar { c -> c.uppercase() } }
+                .takeIf { it.isNotBlank() }
+        ).distinct()
 
-        // Fallback: try IMDb tt ID from poster
-        try {
-            val posterImg = doc.select(".fimg img, .poster img").attr("src")
-            val ttId = Regex("""tt(\d+)""").find(posterImg)?.groupValues?.get(1) ?: return ""
-            val req = Request.Builder().url("https://api.themoviedb.org/3/find/tt$ttId?api_key=7b5fcf48f24a334bb09f87ce20e5f2ce&external_source=imdb_id&language=it-IT").build()
-            val body = client.newCall(req).execute().body?.string() ?: return ""
-            val tvResults = json.decodeFromString<TmdbFindResult>(body).tvResults ?: return ""
-            return tvResults.firstOrNull()?.id?.toString() ?: ""
-        } catch (_: Exception) { return "" }
+        for (t in titles) {
+            try {
+                val q = java.net.URLEncoder.encode(t, "UTF-8")
+                val req = Request.Builder().url("https://api.themoviedb.org/3/search/tv?api_key=7b5fcf48f24a334bb09f87ce20e5f2ce&language=it-IT&query=$q").build()
+                val body = client.newCall(req).execute().body?.string() ?: continue
+                val id = json.decodeFromString<TmdbSearchResult>(body).results?.firstOrNull()?.id?.toString()
+                if (!id.isNullOrBlank()) return id
+            } catch (_: Exception) { continue }
+        }
+        return ""
     }
 
     private fun getEpisodesFromTmdb(tmdbId: String): List<Episode> {
