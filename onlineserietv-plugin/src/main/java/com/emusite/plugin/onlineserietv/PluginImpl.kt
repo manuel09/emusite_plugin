@@ -9,6 +9,8 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import com.emusite.api.Plugin
 import com.emusite.api.Source
+import kotlin.coroutines.resume
+import kotlin.coroutines.suspendCoroutine
 
 class PluginImpl : Plugin {
     override val id = "onlineserietv"
@@ -27,10 +29,8 @@ class PluginImpl : Plugin {
     }
 }
 
-internal fun solveCaptcha(base64Image: String, ctx: Context?): String? {
-    if (ctx == null) return null
-    var result: String? = null
-    val lock = java.util.concurrent.CountDownLatch(1)
+internal suspend fun solveCaptcha(base64Image: String, ctx: Context?): String? = suspendCoroutine { cont ->
+    if (ctx == null) { cont.resume(null); return@suspendCoroutine }
     android.os.Handler(ctx.mainLooper).post {
         try {
             val bytes = Base64.decode(base64Image, Base64.DEFAULT)
@@ -44,17 +44,14 @@ internal fun solveCaptcha(base64Image: String, ctx: Context?): String? {
                 inputType = android.text.InputType.TYPE_CLASS_NUMBER
             }
             layout.addView(input)
-            val dialog = AlertDialog.Builder(ctx)
+            AlertDialog.Builder(ctx)
                 .setTitle("Verifica CAPTCHA")
                 .setView(layout)
                 .setCancelable(false)
-                .setPositiveButton("Sblocca") { _, _ -> result = input.text.toString().trim(); lock.countDown() }
-                .setNegativeButton("Annulla") { _, _ -> lock.countDown() }
-                .create()
-            dialog.window?.setType(android.view.WindowManager.LayoutParams.TYPE_APPLICATION_PANEL)
-            dialog.show()
-        } catch (e: Exception) { lock.countDown() }
+                .setPositiveButton("Sblocca") { _, _ -> cont.resume(input.text.toString().trim()) }
+                .setNegativeButton("Annulla") { _, _ -> cont.resume(null) }
+                .setOnDismissListener { cont.resume(null) }
+                .show()
+        } catch (e: Exception) { cont.resume(null) }
     }
-    lock.await()
-    return result
 }
