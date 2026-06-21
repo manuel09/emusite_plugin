@@ -15,37 +15,26 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { java-version: '17', distribution: 'temurin' }
+      - uses: gradle/actions/setup-gradle@v4
 
-      - name: Set up JDK 17
-        uses: actions/setup-java@v4
-        with:
-          java-version: '17'
-          distribution: 'temurin'
+      - run: ./gradlew :vixsrc-plugin:assembleDebug :onlineserietv-plugin:assembleDebug :guardaserie-plugin:assembleDebug
 
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
-
-      - name: Build VixSrc plugin
-        run: ./gradlew :vixsrc-plugin:assembleDebug
-
-      - name: Build OnlineSerieTV plugin
-        run: ./gradlew :onlineserietv-plugin:assembleDebug
-
-      - name: Package .emuplugin
+      - name: Package
         run: |
           mkdir -p builds
-
-          FILE=$(find vixsrc-plugin/build/outputs/apk/debug/ -name "*.apk" | head -1)
-          cp "$FILE" builds/vixsrc-v${{ github.run_number }}.emuplugin
-          echo "VIXSRC=vixsrc-v${{ github.run_number }}.emuplugin" >> $GITHUB_ENV
-
-          FILE=$(find onlineserietv-plugin/build/outputs/apk/debug/ -name "*.apk" | head -1)
-          cp "$FILE" builds/onlineserietv-v${{ github.run_number }}.emuplugin
-          echo "OSTV=onlineserietv-v${{ github.run_number }}.emuplugin" >> $GITHUB_ENV
+          F=$(find vixsrc-plugin/build/outputs/apk/debug/ -name "*.apk" | head -1)
+          cp "$F" builds/vixsrc-v${{ github.run_number }}.emuplugin
+          echo "V=vixsrc-v${{ github.run_number }}.emuplugin" >> $GITHUB_ENV
+          F=$(find onlineserietv-plugin/build/outputs/apk/debug/ -name "*.apk" | head -1)
+          cp "$F" builds/onlineserietv-v${{ github.run_number }}.emuplugin
+          echo "O=onlineserietv-v${{ github.run_number }}.emuplugin" >> $GITHUB_ENV
+          F=$(find guardaserie-plugin/build/outputs/apk/debug/ -name "*.apk" | head -1)
+          cp "$F" builds/guardaserie-v${{ github.run_number }}.emuplugin
+          echo "G=guardaserie-v${{ github.run_number }}.emuplugin" >> $GITHUB_ENV
 
       - name: Generate repo.json
         run: |
@@ -55,27 +44,14 @@ jobs:
             "description": "Repository ufficiale plugin Emusite",
             "url": "https://raw.githubusercontent.com/${{ github.repository }}/refs/heads/builds/repo.json",
             "plugins": [
-              {
-                "name": "VixSrc",
-                "version": "1.0.${{ github.run_number }}",
-                "internalName": "vixsrc",
-                "description": "Film e Serie TV via TMDB + VixSrc - streaming in italiano",
-                "iconUrl": null,
-                "url": "https://raw.githubusercontent.com/${{ github.repository }}/refs/heads/builds/${{ env.VIXSRC }}"
-              },
-              {
-                "name": "OnlineSerieTV",
-                "version": "1.0.${{ github.run_number }}",
-                "internalName": "onlineserietv",
-                "description": "Film e Serie TV in italiano da OnlineSerieTV",
-                "iconUrl": null,
-                "url": "https://raw.githubusercontent.com/${{ github.repository }}/refs/heads/builds/${{ env.OSTV }}"
-              }
+              {"name":"VixSrc","version":"1.0.${{ github.run_number }}","internalName":"vixsrc","description":"Film e Serie TV via TMDB + VixSrc","iconUrl":null,"url":"https://raw.githubusercontent.com/${{ github.repository }}/refs/heads/builds/${{ env.V }}"},
+              {"name":"OnlineSerieTV","version":"1.0.${{ github.run_number }}","internalName":"onlineserietv","description":"Film e Serie TV in italiano da OnlineSerieTV","iconUrl":null,"url":"https://raw.githubusercontent.com/${{ github.repository }}/refs/heads/builds/${{ env.O }}"},
+              {"name":"GuardaSerie","version":"1.0.${{ github.run_number }}","internalName":"guardaserie","description":"Serie TV italiane da GuardaSerie con streaming VixSrc","iconUrl":null,"url":"https://raw.githubusercontent.com/${{ github.repository }}/refs/heads/builds/${{ env.G }}"}
             ]
           }
           EOF
 
-      - name: Deploy to builds branch
+      - name: Deploy
         if: github.event_name == 'push'
         uses: peaceiris/actions-gh-pages@v4
         with:
