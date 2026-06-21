@@ -79,37 +79,77 @@ class GuardaSerieSource : Source {
 
     override suspend fun getDetails(url: String): MediaDetails {
         val fullUrl = if (url.startsWith("http")) url else "$baseUrl$url"
-        val doc = get(fullUrl)
-        val h1Title = doc.select("h1").text().replace("streaming", "").trim()
         val slugTitle = url.substringAfterLast("/")
             .replace(Regex("""^\d+-"""), "")
             .replace(Regex("""-streaming\.html$|\.html$"""), "")
             .replace("-", " ").trim()
             .split(" ").joinToString(" ") { it.replaceFirstChar { c -> c.uppercase() } }
-        val title = h1Title.ifBlank { slugTitle }
+
+        // Get data from TMDB directly
+        val tmdbId = findTmdbId(slugTitle)
+        if (tmdbId.isNotBlank()) {
+            return getDetailsFromTmdb(tmdbId, url)
+        }
+
+        // Fallback: scrape the page
+        val doc = get(fullUrl)
+        val title = doc.select("h1").text().replace("streaming", "").trim().ifBlank { slugTitle }
         val poster = doc.select(".fimg img, .poster img").attr("src").let { if (it.startsWith("/")) "$baseUrl$it" else it }
         val plot = doc.select(".full-text, .fdesc").text().trim()
-        val genres = doc.select(".fgenres a, .finfo a[href*=/genre/]").map { it.text() }
-        val tmdbId = getTmdbId(title, doc, url)
-
-        val episodes = if (tmdbId.isNotBlank() && tmdbId != "0") {
-            getEpisodesFromTmdb(tmdbId)
-        } else emptyList()
 
         return MediaDetails(
             id = url, title = title, description = plot.ifBlank { null },
             posterUrl = poster.ifBlank { null }, backdropUrl = poster.ifBlank { null },
-            year = null, rating = null, genres = genres,
+            year = null, rating = null, genres = emptyList(),
+            type = ContentType.TV_SERIES, episodes = null
+        )
+    }
+
+    private suspend fun findTmdbId(title: String): String {
+        try {
+            val q = java.net.URLEncoder.encode(title, "UTF-8")
+            val req = Request.Builder().url("https://api.themoviedb.org/3/search/tv?api_key=7b5fcf48f24a334bb09f87ce20e5f2ce&language=it-IT&query=$q").build()
+            val body = client.newCall(req).execute().body?.string() ?: return ""
+            return json.decodeFromString<TmdbSearchResult>(body).results?.firstOrNull()?.id?.toString() ?: ""
+        } catch (_: Exception) { return "" }
+    }
+
+    private suspend fun getDetailsFromTmdb(tmdbId: String, url: String): MediaDetails {
+        val apiUrl = "https://api.themoviedb.org/3/tv/$tmdbId?api_key=7b5fcf48f24a334bb09f87ce20e5f2ce&language=it-IT"
+        val req = Request.Builder().url(apiUrl).build()
+        val body = client.newCall(req).execute().body?.string() ?: return emptyDetails(url)
+        val data = json.decodeFromString<JsonObject>(body)
+        val title = data["name"]?.toString()?.removeSurrounding("\"") ?: return emptyDetails(url)
+        val poster = data["poster_path"]?.toString()?.removeSurrounding("\"")?.let { "https://image.tmdb.org/t/p/w500$it" }
+        val plot = data["overview"]?.toString()?.removeSurrounding("\"")
+        val year = data["first_air_date"]?.toString()?.removeSurrounding("\"")?.substringBefore("-")?.toIntOrNull()
+        val rating = data["vote_average"]?.toString()?.toFloatOrNull()
+
+        val episodes = getEpisodesFromTmdb(tmdbId)
+
+        return MediaDetails(
+            id = url, title = title, description = plot,
+            posterUrl = poster, backdropUrl = poster,
+            year = year, rating = rating, genres = emptyList(),
             type = ContentType.TV_SERIES, episodes = episodes
         )
     }
 
+    private fun emptyDetails(url: String) = MediaDetails(
+        id = url, title = "Unknown", description = null,
+        posterUrl = null, backdropUrl = null,
+        year = null, rating = null, genres = emptyList(),
+        type = ContentType.TV_SERIES, episodes = null
+    )
+
     override suspend fun getEpisodes(url: String): List<Episode> {
-        val fullUrl = if (url.startsWith("http")) url else "$baseUrl$url"
-        val doc = get(fullUrl)
-        val showTitle = doc.select("h1").text().replace("streaming", "").trim()
-        val tmdbId = getTmdbId(showTitle, doc, url)
-        return if (tmdbId.isNotBlank() && tmdbId != "0") getEpisodesFromTmdb(tmdbId) else emptyList()
+        val slugTitle = url.substringAfterLast("/")
+            .replace(Regex("""^\d+-"""), "")
+            .replace(Regex("""-streaming\.html$|\.html$"""), "")
+            .replace("-", " ").trim()
+            .split(" ").joinToString(" ") { it.replaceFirstChar { c -> c.uppercase() } }
+        val tmdbId = findTmdbId(slugTitle)
+        return if (tmdbId.isNotBlank()) getEpisodesFromTmdb(tmdbId) else emptyList()
     }
 
     private suspend fun getTmdbId(title: String, doc: Document, url: String): String {
