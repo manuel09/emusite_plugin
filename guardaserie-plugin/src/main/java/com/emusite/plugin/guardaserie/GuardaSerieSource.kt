@@ -143,12 +143,22 @@ class GuardaSerieSource : Source {
     )
 
     override suspend fun getEpisodes(url: String): List<Episode> {
+        val fullUrl = if (url.startsWith("http")) url else "$baseUrl$url"
         val slugTitle = url.substringAfterLast("/")
             .replace(Regex("""^\d+-"""), "")
             .replace(Regex("""-streaming\.html$|\.html$"""), "")
             .replace("-", " ").trim()
             .split(" ").joinToString(" ") { it.replaceFirstChar { c -> c.uppercase() } }
-        val tmdbId = findTmdbId(slugTitle)
+
+        var tmdbId = findTmdbId(slugTitle)
+        if (tmdbId.isBlank()) {
+            // Fallback: scrape h1 from page
+            try {
+                val doc = get(fullUrl)
+                val h1 = doc.select("h1").text().replace("streaming", "").trim()
+                tmdbId = findTmdbId(h1)
+            } catch (_: Exception) {}
+        }
         return if (tmdbId.isNotBlank()) getEpisodesFromTmdb(tmdbId) else emptyList()
     }
 
