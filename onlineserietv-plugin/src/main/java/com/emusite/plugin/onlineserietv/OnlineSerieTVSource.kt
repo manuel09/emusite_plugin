@@ -1,16 +1,18 @@
 package com.emusite.plugin.onlineserietv
 
+import android.content.Context
+import android.util.Base64
 import com.emusite.api.Source
 import com.emusite.api.models.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import okhttp3.FormBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
-import java.net.SocketTimeoutException
 
-class OnlineSerieTVSource : Source {
+class OnlineSerieTVSource(private val appContext: Context? = null) : Source {
     override val id = "onlineserietv"
     override val name = "OnlineSerieTV"
     override val baseUrl = "https://lingering-truth-455c.diegon7771.workers.dev"
@@ -167,32 +169,65 @@ class OnlineSerieTVSource : Source {
 
     private suspend fun extractFromUprot(uprotUrl: String): String? = withContext(Dispatchers.IO) {
         val ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:131.0) Gecko/20100101 Firefox/131.0"
-        val req = Request.Builder().url(uprotUrl).header("User-Agent", ua).header("Referer", baseUrl).build()
-        val resp = client.newCall(req).execute()
-        val finalUrl = resp.request.url.toString()
-        val html = resp.body?.string() ?: return@withContext null
 
-        // Try finding any M3U8 directly
-        val m3u8 = Regex("""([^"'\s]+\.m3u8[^"'\s]*)""").find(html)?.value
-        if (m3u8 != null && m3u8.startsWith("http")) return@withContext m3u8
+        // Step 1: Follow uprot redirect chain
+        var currentUrl = uprotUrl
+        for (i in 1..5) {
+            val req = Request.Builder().url(currentUrl).header("User-Agent", ua).build()
+            val resp = client.newCall(req).execute()
+            val body = resp.body?.string() ?: break
+            val finalUrl = resp.request.url.toString()
 
-        // Try maxstream redirect
-        if (finalUrl.contains("maxstream.video")) {
-            return@withContext extractMaxStream(finalUrl)
-        }
+            // Check for captcha
+            val captchaMatch = Regex("""atob\('([^']+)'\)""").find(body)
+            if (captchaMatch != null) {
+                val base64Data = captchaMatch.groupValues[1]
+                val captchaImg = try { String(Base64.decode(base64Data, Base64.DEFAULT)) } catch (_: Exception) { null }
+                if (captchaImg != null) {
+                    // Extract more captcha image data
+                    val imgMatch = Regex("""src="data:image[^"]+base64,([^"]+)""").find(body)
+                    val imgBase64 = imgMatch?.groupValues?.get(1) ?: continue
 
-        // Try iframe
-        val iframe = Regex("""<iframe[^>]+src="([^"]+)""").find(html)?.groupValues?.get(1)
-        if (iframe != null) {
-            val iReq = Request.Builder().url(iframe).header("User-Agent", ua).header("Referer", uprotUrl).build()
-            val iResp = client.newCall(iReq).execute()
-            val iHtml = iResp.body?.string() ?: return@withContext null
-            val iUrl = iResp.request.url.toString()
+                    // Show dialog to user
+                    val answer = withContext(Dispatchers.Main) {
+                        solveCaptcha(imgBase64, appContext)
+                    }
+                    if (answer.isNullOrBlank()) return@withContext null
 
-            val m = Regex("""(?:file|src):\s*"([^"]+\.m3u8[^"]*)""").find(iHtml)?.groupValues?.get(1)
-            if (m != null) return@withContext m
+                    // Extract form action URL
+                    val actionMatch = Regex("""action="([^"]+)""").find(body)
+                    val postUrl = actionMatch?.groupValues?.get(1) ?: finalUrl
 
-            if (iUrl.contains("maxstream")) return@withContext extractMaxStream(iUrl)
+                    // Submit captcha answer
+                    val formBody = FormBody.Builder()
+                        .add("captcha", answer)
+                        .build()
+                    val postReq = Request.Builder().url(postUrl).header("User-Agent", ua)
+                        .header("Referer", currentUrl).post(formBody).build()
+                    val postResp = client.newCall(postReq).execute()
+                    val postBody = postResp.body?.string() ?: break
+                    currentUrl = postResp.request.url.toString()
+                    continue
+                }
+            }
+
+            // Check for m3u8 or stream
+            val m3u8 = Regex("""([^"'\s]+\.m3u8[^"'\s]*)""").find(body)?.value
+            if (m3u8 != null && m3u8.startsWith("http")) return@withContext m3u8
+
+            // Check iframe
+            val iframe = Regex("""<iframe[^>]+src="([^"]+)""").find(body)?.groupValues?.get(1)
+            if (iframe != null) {
+                currentUrl = iframe
+                continue
+            }
+
+            // Check maxstream redirect
+            if (finalUrl.contains("maxstream.video") || body.contains("maxstream.video")) {
+                return@withContext extractMaxStream(finalUrl)
+            }
+
+            break
         }
 
         null

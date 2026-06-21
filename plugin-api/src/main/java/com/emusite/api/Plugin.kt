@@ -1,5 +1,6 @@
 package com.emusite.api
 
+import android.content.Context
 import com.emusite.api.models.*
 
 interface Plugin {
@@ -11,6 +12,7 @@ interface Plugin {
     val iconUrl: String?
 
     fun getSources(): List<Source>
+    fun onInit(context: Context) {}
 }
 
 interface Source {
