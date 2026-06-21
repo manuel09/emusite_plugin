@@ -146,27 +146,29 @@ class VixSrcSource : Source {
             val html = embedResponse.body?.string() ?: return@withContext emptyList()
 
             val playlist = extractMasterPlaylist(html) ?: return@withContext emptyList()
+            val activeStreamUrl = extractActiveStreamUrl(html) ?: playlist.url
             val params = playlist.params
             val token = params.token
             val expires = params.expires
-            var playlistUrl = playlist.url
 
-            playlistUrl = if ("?b" in playlistUrl) {
-                playlistUrl.replace("?b:1", "?b=1")
+            var finalUrl = activeStreamUrl
+            if (!finalUrl.contains("?")) {
+                finalUrl = "$finalUrl?token=$token&expires=$expires"
             } else {
-                playlistUrl
+                finalUrl = "$finalUrl&token=$token&expires=$expires"
             }
-            playlistUrl = "$playlistUrl?token=$token&expires=$expires"
             if (playlist.canPlayFHD) {
-                playlistUrl += "&h=1"
+                finalUrl += "&h=1"
             }
 
             listOf(
                 StreamLink(
-                    url = playlistUrl,
+                    url = finalUrl,
                     quality = if (playlist.canPlayFHD) "1080p" else "720p",
                     headers = mapOf(
-                        "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:131.0) Gecko/20100101 Firefox/131.0"
+                        "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:131.0) Gecko/20100101 Firefox/131.0",
+                        "Referer" to baseUrl,
+                        "Origin" to baseUrl
                     )
                 )
             )
@@ -175,6 +177,16 @@ class VixSrcSource : Source {
             emptyList()
         }
         }
+    }
+
+    private fun extractActiveStreamUrl(html: String): String? {
+        val regex = Regex("""window\.streams\s*=\s*(\[[^\]]*\])""")
+        val match = regex.find(html) ?: return null
+        return try {
+            val streamsJson = match.groupValues[1].replace("\\/", "/")
+            val streams = json.decodeFromString<List<VixStream>>(streamsJson)
+            streams.firstOrNull { it.active }?.url
+        } catch (_: Exception) { null }
     }
 
     private fun extractMasterPlaylist(html: String): VixPlaylist? {
@@ -244,6 +256,13 @@ class VixSrcSource : Source {
         }
     }
 }
+
+@Serializable
+data class VixStream(
+    val name: String = "",
+    val active: Boolean = false,
+    val url: String = ""
+)
 
 @Serializable
 data class VixApiResponse(
