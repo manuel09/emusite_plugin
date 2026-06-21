@@ -14,6 +14,7 @@ object TMDB {
     private const val BASE_URL = "https://api.themoviedb.org/3"
     const val IMAGE_BASE = "https://image.tmdb.org/t/p/w500"
     const val IMAGE_BASE_ORIGINAL = "https://image.tmdb.org/t/p/original"
+    var language = "it-IT"
 
     private val client = OkHttpClient()
     private val json = Json { ignoreUnknownKeys = true }
@@ -56,7 +57,7 @@ object TMDB {
 
     private suspend inline fun <reified T> get(url: String, params: Map<String, String> = emptyMap()): T {
         val urlBuilder = StringBuilder(url)
-        urlBuilder.append("?api_key=$API_KEY")
+        urlBuilder.append("?api_key=$API_KEY&language=$language&include_image_language=$language,null,en")
         params.forEach { (key, value) ->
             urlBuilder.append("&$key=$value")
         }
