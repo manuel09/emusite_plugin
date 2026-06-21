@@ -1,0 +1,72 @@
+name: Build Plugin
+
+on:
+  push:
+    branches: [master, main]
+    paths-ignore:
+      - '**.md'
+  pull_request:
+    branches: [master, main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Build VixSrc plugin
+        run: ./gradlew :vixsrc-plugin:assembleRelease
+
+      - name: Rename to .emuplugin
+        run: |
+          mkdir -p builds
+          APK=$(find vixsrc-plugin/build/outputs/apk/release/ -name "*.apk" -not -name "*unsigned*" | head -1)
+          cp "$APK" builds/vixsrc-plugin-v${{ github.run_number }}.emuplugin
+          echo "PLUGIN_FILE=vixsrc-plugin-v${{ github.run_number }}.emuplugin" >> $GITHUB_ENV
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: vixsrc-plugin
+          path: builds/
+
+      - name: Generate repo.json
+        run: |
+          cat > builds/repo.json << 'EOF'
+          {
+            "name": "Emusite Plugins",
+            "description": "Repository ufficiale plugin Emusite",
+            "url": "https://raw.githubusercontent.com/${{ github.repository }}/refs/heads/builds/repo.json",
+            "plugins": [
+              {
+                "name": "VixSrc",
+                "version": "1.0.${{ github.run_number }}",
+                "internalName": "vixsrc",
+                "description": "Film e Serie TV via TMDB + VixSrc - streaming in italiano",
+                "iconUrl": null,
+                "url": "https://raw.githubusercontent.com/${{ github.repository }}/refs/heads/builds/${{ env.PLUGIN_FILE }}"
+              }
+            ]
+          }
+          EOF
+
+      - name: Deploy to builds branch
+        if: github.event_name == 'push'
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_branch: builds
+          publish_dir: builds
+          force_orphan: true
