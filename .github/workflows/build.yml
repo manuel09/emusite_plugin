@@ -9,6 +9,9 @@ on:
     branches: [master, main]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -26,25 +29,19 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Build VixSrc plugin
+      - name: Build plugin
         run: ./gradlew :vixsrc-plugin:assembleDebug
 
-      - name: Rename to .emuplugin
+      - name: Package .emuplugin
         run: |
           mkdir -p builds
-          APK=$(find vixsrc-plugin/build/outputs/apk/debug/ -name "*.apk" | head -1)
-          cp "$APK" builds/vixsrc-plugin-v${{ github.run_number }}.emuplugin
-          echo "PLUGIN_FILE=vixsrc-plugin-v${{ github.run_number }}.emuplugin" >> $GITHUB_ENV
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: vixsrc-plugin
-          path: builds/
+          FILE=$(find vixsrc-plugin/build/outputs/apk/debug/ -name "*.apk" | head -1)
+          cp "$FILE" builds/vixsrc-plugin-v${{ github.run_number }}.emuplugin
+          echo "EMUPLUGIN=vixsrc-plugin-v${{ github.run_number }}.emuplugin" >> $GITHUB_ENV
 
       - name: Generate repo.json
         run: |
-          cat > builds/repo.json << 'EOF'
+          cat > builds/repo.json << EOF
           {
             "name": "Emusite Plugins",
             "description": "Repository ufficiale plugin Emusite",
@@ -56,7 +53,7 @@ jobs:
                 "internalName": "vixsrc",
                 "description": "Film e Serie TV via TMDB + VixSrc - streaming in italiano",
                 "iconUrl": null,
-                "url": "https://raw.githubusercontent.com/${{ github.repository }}/refs/heads/builds/${{ env.PLUGIN_FILE }}"
+                "url": "https://raw.githubusercontent.com/${{ github.repository }}/refs/heads/builds/${{ env.EMUPLUGIN }}"
               }
             ]
           }
