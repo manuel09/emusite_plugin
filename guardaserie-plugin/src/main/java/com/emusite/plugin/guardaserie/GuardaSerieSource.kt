@@ -3,6 +3,8 @@ package com.emusite.plugin.guardaserie
 import com.emusite.api.Source
 import com.emusite.api.models.*
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -34,11 +36,10 @@ class GuardaSerieSource : Source {
     override suspend fun getHomePage(): List<SearchResult> =
         getHomePageSections().flatMap { it.items }
 
-    override suspend fun getHomePageSections(): List<HomePageSection> {
+    override suspend fun getHomePageSections(): List<HomePageSection> = coroutineScope {
         val sections = listOf(
             "I titoli del momento" to "$baseUrl/i-titoli-del-momento/",
             "Top IMDB" to "$baseUrl/top-imdb/",
-            "Aggiornamenti" to "$baseUrl/aggiornamenti-giornalieri.html",
             "Dramma" to "$baseUrl/dramma/",
             "Commedia" to "$baseUrl/commedia/",
             "Crime" to "$baseUrl/crime/",
@@ -47,13 +48,15 @@ class GuardaSerieSource : Source {
             "Horror" to "$baseUrl/horror/",
             "Mistero" to "$baseUrl/mistero/",
         )
-        return sections.mapNotNull { (name, url) ->
-            try {
-                val doc = get(url)
-                val items = parseItems(doc)
-                if (items.isNotEmpty()) HomePageSection(name, items.take(15)) else null
-            } catch (_: Exception) { null }
-        }
+        sections.map { (name, url) ->
+            async {
+                try {
+                    val doc = get(url)
+                    val items = parseItems(doc)
+                    if (items.isNotEmpty()) HomePageSection(name, items.take(15)) else null
+                } catch (_: Exception) { null }
+            }
+        }.mapNotNull { it.await() }
     }
 
     private fun parseItems(doc: Document): List<SearchResult> {
