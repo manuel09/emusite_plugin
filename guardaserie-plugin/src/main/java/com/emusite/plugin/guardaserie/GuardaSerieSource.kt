@@ -275,7 +275,11 @@ class GuardaSerieSource : Source {
         val parts = Regex("""window\.(\w+)\s*=""").split(script).drop(1)
         val keys = Regex("""window\.(\w+)\s*=""").findAll(script).map { it.groupValues[1] }.toList()
         return "{" + keys.zip(parts).joinToString(",") { (k, v) ->
-            "\"$k\":${v.replace(";","").trim()}"
+            val cleaned = v.replace(";", "")
+                .replace(Regex("""(\{|\[|,)\s*(\w+)\s*:"""), "$1 \"$2\":")
+                .replace(Regex(""",(\s*[}\]])"""), "$1")
+                .trim()
+            "\"$k\": $cleaned"
         }.replace("'", "\"") + "}"
     }
 
