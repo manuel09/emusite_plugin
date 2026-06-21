@@ -18,3 +18,4 @@ rootProject.name = "EmusitePlugin"
 
 include(":plugin-api")
 include(":vixsrc-plugin")
+include(":onlineserietv-plugin")

@@ -1,0 +1,22 @@
+1<?xml version="1.0" encoding="utf-8"?>
+2<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+3    package="com.emusite.plugin.onlineserietv"
+4    android:versionCode="1"
+5    android:versionName="1.0.0" >
+6
+7    <uses-sdk
+8        android:minSdkVersion="24"
+9        android:targetSdkVersion="35" />
+10
+11    <uses-permission android:name="android.permission.INTERNET" />
+11-->/home/manuel/Scrivania/emusite/onlineserietv-plugin/src/main/AndroidManifest.xml:3:5-67
+11-->/home/manuel/Scrivania/emusite/onlineserietv-plugin/src/main/AndroidManifest.xml:3:22-64
+12
+13    <application
+13-->/home/manuel/Scrivania/emusite/onlineserietv-plugin/src/main/AndroidManifest.xml:4:5-57
+14        android:debuggable="true"
+15        android:extractNativeLibs="false"
+16        android:label="OnlineSerieTV Plugin" />
+16-->/home/manuel/Scrivania/emusite/onlineserietv-plugin/src/main/AndroidManifest.xml:4:18-54
+17
+18</manifest>

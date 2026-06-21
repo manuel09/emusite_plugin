@@ -1,4 +1,4 @@
-name: Build Plugin
+name: Build Plugins
 
 on:
   push:
@@ -29,15 +29,23 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Build plugin
+      - name: Build VixSrc plugin
         run: ./gradlew :vixsrc-plugin:assembleDebug
+
+      - name: Build OnlineSerieTV plugin
+        run: ./gradlew :onlineserietv-plugin:assembleDebug
 
       - name: Package .emuplugin
         run: |
           mkdir -p builds
+
           FILE=$(find vixsrc-plugin/build/outputs/apk/debug/ -name "*.apk" | head -1)
-          cp "$FILE" builds/vixsrc-plugin-v${{ github.run_number }}.emuplugin
-          echo "EMUPLUGIN=vixsrc-plugin-v${{ github.run_number }}.emuplugin" >> $GITHUB_ENV
+          cp "$FILE" builds/vixsrc-v${{ github.run_number }}.emuplugin
+          echo "VIXSRC=vixsrc-v${{ github.run_number }}.emuplugin" >> $GITHUB_ENV
+
+          FILE=$(find onlineserietv-plugin/build/outputs/apk/debug/ -name "*.apk" | head -1)
+          cp "$FILE" builds/onlineserietv-v${{ github.run_number }}.emuplugin
+          echo "OSTV=onlineserietv-v${{ github.run_number }}.emuplugin" >> $GITHUB_ENV
 
       - name: Generate repo.json
         run: |
@@ -53,7 +61,15 @@ jobs:
                 "internalName": "vixsrc",
                 "description": "Film e Serie TV via TMDB + VixSrc - streaming in italiano",
                 "iconUrl": null,
-                "url": "https://raw.githubusercontent.com/${{ github.repository }}/refs/heads/builds/${{ env.EMUPLUGIN }}"
+                "url": "https://raw.githubusercontent.com/${{ github.repository }}/refs/heads/builds/${{ env.VIXSRC }}"
+              },
+              {
+                "name": "OnlineSerieTV",
+                "version": "1.0.${{ github.run_number }}",
+                "internalName": "onlineserietv",
+                "description": "Film e Serie TV in italiano da OnlineSerieTV",
+                "iconUrl": null,
+                "url": "https://raw.githubusercontent.com/${{ github.repository }}/refs/heads/builds/${{ env.OSTV }}"
               }
             ]
           }

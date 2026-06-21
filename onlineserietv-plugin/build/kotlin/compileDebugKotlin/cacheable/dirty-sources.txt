@@ -1,0 +1,2 @@
+/home/manuel/Scrivania/emusite/onlineserietv-plugin/src/main/java/com/emusite/plugin/onlineserietv/PluginImpl.kt
+/home/manuel/Scrivania/emusite/onlineserietv-plugin/src/main/java/com/emusite/plugin/onlineserietv/OnlineSerieTVSource.kt
