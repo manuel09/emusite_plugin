@@ -2,6 +2,7 @@ package com.emusite.plugin.onlineserietv
 
 import android.content.Context
 import com.emusite.api.Source
+import com.emusite.api.WebViewHelper
 import com.emusite.api.models.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -207,52 +208,41 @@ class OnlineSerieTVSource(private val appContext: Context? = null) : Source {
     private val json = Json { ignoreUnknownKeys = true }
 
     private suspend fun extractFromUprot(uprotUrl: String): String? = withContext(Dispatchers.IO) {
+        // Try WebView first (bypasses Cloudflare, runs JS)
+        if (appContext != null) {
+            try {
+                val html = WebViewHelper.loadPage(appContext!!, uprotUrl)
+                val mp = extractMasterPlaylist(html)
+                if (mp != null) {
+                    val u = mp.url + "?token=" + mp.params.token + "&expires=" + mp.params.expires
+                    return@withContext if (mp.canPlayFHD) u + "&h=1" else u
+                }
+                val m3u8 = Regex("""(https?://[^"'\s]+\.m3u8[^"'\s]*)""").find(html)?.value
+                if (m3u8 != null) return@withContext m3u8
+            } catch (_: Exception) {}
+        }
+
+        // Fallback: standard HTTP
         val ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:131.0) Gecko/20100101 Firefox/131.0"
         var currentUrl = uprotUrl
-
         for (i in 1..5) {
             val req = Request.Builder().url(currentUrl).header("User-Agent", ua).build()
             val resp = client.newCall(req).execute()
             val body = resp.body?.string() ?: break
             val finalUrl = resp.request.url.toString()
 
-            // Try masterPlaylist extraction (like VixSrc/vixcloud)
             val mp = extractMasterPlaylist(body)
             if (mp != null) {
-                val url = mp.url + "?token=" + mp.params.token + "&expires=" + mp.params.expires
-                if (mp.canPlayFHD) return@withContext url + "&h=1"
-                return@withContext url
+                val u = mp.url + "?token=" + mp.params.token + "&expires=" + mp.params.expires
+                return@withContext if (mp.canPlayFHD) u + "&h=1" else u
             }
-
-            // Direct m3u8
             val m3u8 = Regex("""(https?://[^"'\s]+\.m3u8[^"'\s]*)""").find(body)?.value
             if (m3u8 != null) return@withContext m3u8
-
-            // maxstream redirect
             if (finalUrl.contains("maxstream.video")) {
-                val ms = extractMaxStream(finalUrl)
-                if (ms != null) return@withContext ms
+                extractMaxStream(finalUrl)?.let { return@withContext it }
             }
-
-            // Follow iframe
             val iframe = Regex("""<iframe[^>]+src="([^"]+)""").find(body)?.groupValues?.get(1)
             if (iframe != null) { currentUrl = iframe; continue }
-
-            // Captcha detection
-            val captchaBase64 = Regex("""src="data:image[^"]+base64,([^"]+)""").find(body)?.groupValues?.get(1)
-            if (captchaBase64 != null && appContext != null) {
-                val answer = withContext(Dispatchers.Main) { solveCaptcha(captchaBase64, appContext) }
-                if (!answer.isNullOrBlank()) {
-                    val action = Regex("""action="([^"]+)""").find(body)?.groupValues?.get(1) ?: finalUrl
-                    currentUrl = action
-                    // POST captcha
-                    val postReq = Request.Builder().url(action).header("User-Agent", ua)
-                        .post(FormBody.Builder().add("captcha", answer).build()).build()
-                    client.newCall(postReq).execute().close()
-                    continue
-                }
-            }
-
             break
         }
         null
