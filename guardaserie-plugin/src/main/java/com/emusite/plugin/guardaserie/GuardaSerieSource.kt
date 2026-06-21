@@ -100,30 +100,23 @@ class GuardaSerieSource : Source {
     }
 
     private suspend fun getTmdbId(title: String, doc: Document, url: String): String {
-        // Extract tt ID from poster or script
-        val posterImg = doc.select(".fimg img, .poster img").attr("src")
-        var ttId = Regex("""tt(\d+)""").find(posterImg)?.groupValues?.get(1)
-        if (ttId == null) {
-            doc.select("script").forEach {
-                Regex("""tt(\d+)""").find(it.data())?.groupValues?.get(1)?.let { ttId = it }
-            }
-        }
-        if (ttId == null) {
-            // Search TMDB by title
-            try {
-                val q = java.net.URLEncoder.encode(title.replace(Regex("""\(.*?\)"""), "").trim(), "UTF-8")
-                val req = Request.Builder().url("https://api.themoviedb.org/3/search/tv?api_key=7b5fcf48f24a334bb09f87ce20e5f2ce&language=it-IT&query=$q").build()
-                val body = client.newCall(req).execute().body?.string() ?: return ""
-                return json.decodeFromString<TmdbSearchResult>(body).results?.firstOrNull()?.id?.toString() ?: ""
-            } catch (_: Exception) { return "" }
-        }
-
-        // Convert IMDb ID to TMDB ID
+        // Search TMDB by title
         try {
+            val cleanTitle = title.replace(Regex("""\(.*?\)"""), "").replace("streaming", "").trim()
+            val q = java.net.URLEncoder.encode(cleanTitle, "UTF-8")
+            val req = Request.Builder().url("https://api.themoviedb.org/3/search/tv?api_key=7b5fcf48f24a334bb09f87ce20e5f2ce&language=it-IT&query=$q").build()
+            val body = client.newCall(req).execute().body?.string() ?: return ""
+            val id = json.decodeFromString<TmdbSearchResult>(body).results?.firstOrNull()?.id?.toString()
+            if (!id.isNullOrBlank()) return id
+        } catch (_: Exception) {}
+
+        // Fallback: try IMDb tt ID from poster
+        try {
+            val posterImg = doc.select(".fimg img, .poster img").attr("src")
+            val ttId = Regex("""tt(\d+)""").find(posterImg)?.groupValues?.get(1) ?: return ""
             val req = Request.Builder().url("https://api.themoviedb.org/3/find/tt$ttId?api_key=7b5fcf48f24a334bb09f87ce20e5f2ce&external_source=imdb_id&language=it-IT").build()
             val body = client.newCall(req).execute().body?.string() ?: return ""
-            val data = json.decodeFromString<TmdbFindResult>(body)
-            val tvResults = data.tvResults ?: emptyList()
+            val tvResults = json.decodeFromString<TmdbFindResult>(body).tvResults ?: return ""
             return tvResults.firstOrNull()?.id?.toString() ?: ""
         } catch (_: Exception) { return "" }
     }
