@@ -1,11 +1,13 @@
 package com.emusite.plugin.onlineserietv
 
 import android.content.Context
-import android.util.Base64
 import com.emusite.api.Source
 import com.emusite.api.models.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 import okhttp3.FormBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -197,6 +199,8 @@ class OnlineSerieTVSource(private val appContext: Context? = null) : Source {
         Regex("""(https?://[^"'\s]+\.m3u8[^"'\s]*)""").find(body)?.value
     }
 
+    private val json = Json { ignoreUnknownKeys = true }
+
     private suspend fun extractFromUprot(uprotUrl: String): String? = withContext(Dispatchers.IO) {
         val ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:131.0) Gecko/20100101 Firefox/131.0"
         var currentUrl = uprotUrl
@@ -206,52 +210,90 @@ class OnlineSerieTVSource(private val appContext: Context? = null) : Source {
             val resp = client.newCall(req).execute()
             val body = resp.body?.string() ?: break
             val finalUrl = resp.request.url.toString()
-            val ct = resp.header("Content-Type", "") ?: ""
 
-            // Direct m3u8
-            if (ct.contains("mpegurl") || ct.contains("vnd.apple.mpegurl")) {
-                return@withContext currentUrl
+            // Try masterPlaylist extraction (like VixSrc/vixcloud)
+            val mp = extractMasterPlaylist(body)
+            if (mp != null) {
+                val url = mp.url + "?token=" + mp.params.token + "&expires=" + mp.params.expires
+                if (mp.canPlayFHD) return@withContext url + "&h=1"
+                return@withContext url
             }
 
-            // Find any m3u8 URL
+            // Direct m3u8
             val m3u8 = Regex("""(https?://[^"'\s]+\.m3u8[^"'\s]*)""").find(body)?.value
             if (m3u8 != null) return@withContext m3u8
 
             // maxstream redirect
-            if (finalUrl.contains("maxstream.video") || body.contains("maxstream.video")) {
+            if (finalUrl.contains("maxstream.video")) {
                 val ms = extractMaxStream(finalUrl)
                 if (ms != null) return@withContext ms
             }
 
             // Follow iframe
             val iframe = Regex("""<iframe[^>]+src="([^"]+)""").find(body)?.groupValues?.get(1)
-            if (iframe != null) {
-                currentUrl = iframe
-                continue
-            }
+            if (iframe != null) { currentUrl = iframe; continue }
 
-            // Try captcha detection
+            // Captcha detection
             val captchaBase64 = Regex("""src="data:image[^"]+base64,([^"]+)""").find(body)?.groupValues?.get(1)
             if (captchaBase64 != null && appContext != null) {
-                val answer = withContext(Dispatchers.Main) {
-                    solveCaptcha(captchaBase64, appContext)
-                }
+                val answer = withContext(Dispatchers.Main) { solveCaptcha(captchaBase64, appContext) }
                 if (!answer.isNullOrBlank()) {
                     val action = Regex("""action="([^"]+)""").find(body)?.groupValues?.get(1) ?: finalUrl
-                    val postReq = Request.Builder().url(action)
-                        .header("User-Agent", ua).header("Referer", currentUrl)
+                    currentUrl = action
+                    // POST captcha
+                    val postReq = Request.Builder().url(action).header("User-Agent", ua)
                         .post(FormBody.Builder().add("captcha", answer).build()).build()
-                    val postResp = client.newCall(postReq).execute()
-                    currentUrl = postResp.request.url.toString()
+                    client.newCall(postReq).execute().close()
                     continue
                 }
             }
 
             break
         }
-
         null
     }
+
+    private fun extractMasterPlaylist(html: String): VixStylePlaylist? {
+        if (!html.contains("masterPlaylist")) return null
+        return try {
+            val scriptBlocks = Regex("""<script[^>]*>([\s\S]*?)</script>""").findAll(html)
+            for (block in scriptBlocks) {
+                val script = block.groupValues[1]
+                if (!script.contains("masterPlaylist")) continue
+                val extracted = extractJsObject(script)
+                val root = json.decodeFromString<JsonObject>(extracted)
+                val mp = root["masterPlaylist"]?.toString() ?: continue
+                val playlist = json.decodeFromString<VixStylePlaylist>(mp)
+                val fhd = root["canPlayFHD"]?.let {
+                    try { json.decodeFromString<Boolean>(it.toString()) } catch (_: Exception) { false }
+                } ?: false
+                if (playlist.url.isNotBlank()) return playlist.copy(canPlayFHD = fhd)
+            }
+            null
+        } catch (_: Exception) { null }
+    }
+
+    private fun extractJsObject(script: String): String {
+        val parts = Regex("""window\.(\w+)\s*=""").split(script).drop(1)
+        val keys = Regex("""window\.(\w+)\s*=""").findAll(script).map { it.groupValues[1] }.toList()
+        val jsonObjects = keys.zip(parts).map { (key, value) ->
+            val cleaned = value.replace(";", "")
+                .replace(Regex("""(\{|\[|,)\s*(\w+)\s*:"""), "$1 \"$2\":")
+                .replace(Regex(""",(\s*[}\]])"""), "$1").trim()
+            "\"$key\": $cleaned"
+        }
+        return "{\n${jsonObjects.joinToString(",\n")}\n}".replace("'", "\"")
+    }
+
+    @Serializable
+    data class VixStylePlaylistParams(val token: String = "", val expires: String = "")
+
+    @Serializable
+    data class VixStylePlaylist(
+        val url: String = "",
+        val params: VixStylePlaylistParams = VixStylePlaylistParams(),
+        val canPlayFHD: Boolean = false
+    )
 
     private suspend fun extractMaxStream(url: String): String? = withContext(Dispatchers.IO) {
         val request = Request.Builder()
