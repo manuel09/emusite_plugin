@@ -1,0 +1,10 @@
+{
+  "name": "Emusite Plugins",
+  "description": "Repository ufficiale plugin Emusite",
+  "url": "https://raw.githubusercontent.com/manuel09/emusite_plugin/refs/heads/builds/repo.json",
+  "plugins": [
+    {"name":"VixSrc","version":"1.0.56","internalName":"vixsrc","description":"Film e Serie TV via TMDB + VixSrc","iconUrl":null,"url":"https://raw.githubusercontent.com/manuel09/emusite_plugin/refs/heads/builds/vixsrc-v56.emuplugin"},
+    {"name":"OnlineSerieTV","version":"1.0.56","internalName":"onlineserietv","description":"Film e Serie TV in italiano da OnlineSerieTV","iconUrl":null,"url":"https://raw.githubusercontent.com/manuel09/emusite_plugin/refs/heads/builds/onlineserietv-v56.emuplugin"},
+    {"name":"GuardaSerie","version":"1.0.56","internalName":"guardaserie","description":"Serie TV italiane da GuardaSerie con streaming VixSrc","iconUrl":null,"url":"https://raw.githubusercontent.com/manuel09/emusite_plugin/refs/heads/builds/guardaserie-v56.emuplugin"}
+  ]
+}
