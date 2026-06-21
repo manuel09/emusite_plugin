@@ -78,7 +78,8 @@ class GuardaSerieSource : Source {
     }
 
     override suspend fun getDetails(url: String): MediaDetails {
-        val doc = get(url)
+        val fullUrl = if (url.startsWith("http")) url else "$baseUrl$url"
+        val doc = get(fullUrl)
         val h1Title = doc.select("h1").text().replace("streaming", "").trim()
         val slugTitle = url.substringAfterLast("/")
             .replace(Regex("""^\d+-"""), "")
@@ -104,7 +105,8 @@ class GuardaSerieSource : Source {
     }
 
     override suspend fun getEpisodes(url: String): List<Episode> {
-        val doc = get(url)
+        val fullUrl = if (url.startsWith("http")) url else "$baseUrl$url"
+        val doc = get(fullUrl)
         val showTitle = doc.select("h1").text().replace("streaming", "").trim()
         val tmdbId = getTmdbId(showTitle, doc, url)
         return if (tmdbId.isNotBlank() && tmdbId != "0") getEpisodesFromTmdb(tmdbId) else emptyList()
