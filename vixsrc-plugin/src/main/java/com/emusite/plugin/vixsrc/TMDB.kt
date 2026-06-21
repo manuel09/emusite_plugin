@@ -64,7 +64,7 @@ object TMDB {
             .header("Accept", "application/json")
             .build()
 
-        return with(kotlinx.coroutines.Dispatchers.IO) {
+        return withContext(kotlinx.coroutines.Dispatchers.IO) {
             val response = client.newCall(request).execute()
             if (!response.isSuccessful) {
                 throw IOException("TMDB API error: ${response.code}")
