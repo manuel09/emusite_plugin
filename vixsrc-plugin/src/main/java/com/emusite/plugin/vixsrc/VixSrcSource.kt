@@ -40,12 +40,12 @@ class VixSrcSource : Source {
         val topRated = TMDB.getTopRatedMovies()
         val upcoming = TMDB.getUpcomingMovies()
 
-        val genreSections = GENRES.map { (name, id) ->
+        val genreSections = GENRES.map { (name, genreId) ->
             try {
                 HomePageSection(
                     name = name,
-                    items = TMDB.discoverMoviesByGenre(id).results
-                        .map { it.toSearchResult(MOVIE, id) }.take(10)
+                    items = TMDB.discoverMoviesByGenre(genreId).results
+                        .map { it.toSearchResult(MOVIE, this@VixSrcSource.id) }.take(10)
                 )
             } catch (_: Exception) {
                 HomePageSection(name = name, items = emptyList())
@@ -53,10 +53,10 @@ class VixSrcSource : Source {
         }
 
         return listOf(
-            HomePageSection(name = "Trending", items = trending.results.map { it.toSearchResult(MOVIE, id) }.take(10)),
-            HomePageSection(name = "Popular", items = popular.results.map { it.toSearchResult(MOVIE, id) }.take(10)),
-            HomePageSection(name = "Top Rated", items = topRated.results.map { it.toSearchResult(MOVIE, id) }.take(10)),
-            HomePageSection(name = "Upcoming", items = upcoming.results.map { it.toSearchResult(MOVIE, id) }.take(10)),
+            HomePageSection(name = "Trending", items = trending.results.map { it.toSearchResult(MOVIE, this.id) }.take(10)),
+            HomePageSection(name = "Popular", items = popular.results.map { it.toSearchResult(MOVIE, this.id) }.take(10)),
+            HomePageSection(name = "Top Rated", items = topRated.results.map { it.toSearchResult(MOVIE, this.id) }.take(10)),
+            HomePageSection(name = "Upcoming", items = upcoming.results.map { it.toSearchResult(MOVIE, this.id) }.take(10)),
         ) + genreSections
     }
 
